@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import crypto from 'crypto';
+import { messageQueue } from '../workers/message.worker';
 
 const router = Router();
 
@@ -50,16 +51,37 @@ router.post('/', async (req: Request, res: Response) => {
           
           console.log(`📩 Received new message from ${contact.wa_id}. ID Hash: ${messageIdHash}`);
 
-          // 2. Check if the message is an audio (voice note)
+          // 2. Check the message type and add to Queue
           if (message.type === 'audio') {
             const audioId = message.audio.id;
             
-            // TODO: In Week 3, we will add this audioId to our BullMQ Redis Queue 
-            // instead of processing it right away.
-            console.log(`🎤 Received Voice Note! Audio ID: ${audioId}`);
+            console.log(`🎤 Received Voice Note! Adding to Queue... (ID: ${audioId})`);
+            await messageQueue.add('process_audio', {
+              messageType: 'audio',
+              mediaUrl: audioId, // In reality, we fetch the audio using this ID
+              contactPhone: contact.wa_id,
+              messageId: messageIdHash
+            });
             
+          } else if (message.type === 'text') {
+            console.log(`📝 Received Text Message! Adding to Queue...`);
+            await messageQueue.add('process_text', {
+              messageType: 'text',
+              textContent: message.text.body,
+              contactPhone: contact.wa_id,
+              messageId: messageIdHash
+            });
+
+          } else if (message.type === 'image') {
+            console.log(`📸 Received Image! Adding to Queue...`);
+            await messageQueue.add('process_image', {
+              messageType: 'image',
+              mediaUrl: message.image.id,
+              contactPhone: contact.wa_id,
+              messageId: messageIdHash
+            });
           } else {
-            console.log(`ℹ️ Received non-audio message type: ${message.type}`);
+            console.log(`ℹ️ Received unsupported message type: ${message.type}`);
           }
         }
       }
