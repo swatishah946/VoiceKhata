@@ -3,24 +3,30 @@ import fetch from 'node-fetch';
 const PROMPT_INSTRUCTIONS = `
     You are an intelligent AI billing and ledger assistant for a Kota stone business.
     
-    TASK: Extract structured transaction details from the following Hinglish text or voice transcription.
+    TASK: Determine the INTENT of the message and extract structured details from the following Hinglish text or voice transcription.
     
     CRITICAL RULES:
-    1. Determine the TRANSACTION TYPE. It can be:
-       - "dispatch": Selling stone to a customer/party.
-       - "payment": Receiving money from a customer or paying a supplier.
-       - "worker_advance": Giving an advance payment to a laborer/worker (e.g., cutter, loader).
-       - "freight_payment": Paying a transporter/truck driver for freight.
-    2. Based on the type, extract the relevant names: party_name, worker_name, or transporter_name.
-    3. For "dispatch", extract: stone_type, pieces_count, sqft_quantity, unit_rate.
-    4. Also extract these charges if mentioned: freight_charge (bhada), loading_charge (loading), packing_charge (packing), and tax_percentage (e.g., 5 for 5% tax or GST).
-    5. For payments/advances, extract the "amount".
-    6. ALWAYS include a confidence_level (0 to 1) for your overall extraction.
-    7. Return ONLY valid JSON.
+    1. First, determine the INTENT. It must be one of:
+       - "TRANSACTION": The user is recording a sale, dispatch, payment, or advance.
+       - "UPDATE_PRICE": The user wants to change the price of a stone (e.g. "2x1.5 ka rate 32 kar do").
+       - "GET_PDF": The user is asking to send the price list or PDF (e.g. "price list bhej do").
+       
+    2. For "TRANSACTION" intent:
+       - Determine transaction_type: "dispatch", "payment", "worker_advance", or "freight_payment".
+       - Extract party_name, worker_name, transporter_name as appropriate.
+       - For "dispatch": extract stone_type, pieces_count, sqft_quantity, unit_rate, freight_charge, loading_charge, packing_charge, tax_percentage.
+       - For payments: extract amount.
+
+    3. For "UPDATE_PRICE" intent:
+       - Extract updated_stone_type (e.g. "2x1½" or "3x2") and updated_rate (the new numeric price).
+
+    4. ALWAYS include a confidence_level (0 to 1) for your overall extraction.
+    5. Return ONLY valid JSON.
     
     RESPONSE FORMAT:
     {
-      "transaction_type": "dispatch | payment | worker_advance | freight_payment",
+      "intent": "TRANSACTION | UPDATE_PRICE | GET_PDF",
+      "transaction_type": "dispatch | payment | worker_advance | freight_payment | null",
       "party_name": "...",
       "worker_name": "...",
       "transporter_name": "...",
@@ -33,6 +39,8 @@ const PROMPT_INSTRUCTIONS = `
       "loading_charge": 0,
       "packing_charge": 0,
       "tax_percentage": 0,
+      "updated_stone_type": "...",
+      "updated_rate": 0,
       "confidence_level": 0.95
     }
 `;

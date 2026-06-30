@@ -3,6 +3,8 @@ import { transcribeAudio } from '../services/whisper.service';
 import { extractTransactionDetails, extractTransactionDetailsFromImage } from '../services/ai.service';
 import { LedgerService } from '../services/ledger.service';
 import { WhatsAppService } from '../services/whatsapp.service';
+import { PdfService } from '../services/pdf.service';
+import pool from '../db/index';
 
 const connection = {
   host: process.env.REDIS_HOST || '127.0.0.1',
@@ -55,19 +57,48 @@ const worker = new Worker(
         extractedData = await extractTransactionDetailsFromImage(base64, mimeType);
       }
 
-      // 4. Save to Ledger & Send Confirmation
+      // 4. Handle Intents & Execute Logic
       if (extractedData) {
         console.log(`✅ Extracted JSON Data:`, extractedData);
         
         const DEFAULT_ORG_ID = '00000000-0000-0000-0000-000000000000'; 
         
-        // Save to Database (Pending)
-        const dbResult = await LedgerService.processTransaction(extractedData, DEFAULT_ORG_ID, messageId);
-        console.log(`✅ Saved to Database (Pending Confirmation): Transaction ID ${dbResult.transactionId}`);
-        
-        // Send WhatsApp Interactive Message
-        await WhatsAppService.sendInteractiveConfirmation(contactPhone, dbResult);
-        console.log(`📨 Sent WhatsApp confirmation to ${contactPhone}`);
+        if (extractedData.intent === 'UPDATE_PRICE') {
+          console.log(`📝 Updating price for ${extractedData.updated_stone_type} to ₹${extractedData.updated_rate}`);
+          
+          // Update DB
+          await pool.query(
+            `INSERT INTO price_list (organization_id, stone_type, rate_per_sqft)
+             VALUES ($1, $2, $3)
+             ON CONFLICT (organization_id, stone_type) 
+             DO UPDATE SET rate_per_sqft = EXCLUDED.rate_per_sqft, updated_at = CURRENT_TIMESTAMP`,
+            [DEFAULT_ORG_ID, extractedData.updated_stone_type, extractedData.updated_rate]
+          );
+          
+          // Generate PDF, upload and send
+          const pdfPath = await PdfService.generatePricingPdf(DEFAULT_ORG_ID);
+          const mediaId = await WhatsAppService.uploadMedia(pdfPath, 'application/pdf');
+          await WhatsAppService.sendDocument(contactPhone, mediaId, 'Pricing_List.pdf', `✅ Done! The price for ${extractedData.updated_stone_type} has been updated to ₹${extractedData.updated_rate}. Here is the latest Pricing PDF.`);
+          console.log(`📨 Sent Updated PDF to ${contactPhone}`);
+
+        } else if (extractedData.intent === 'GET_PDF') {
+          console.log(`📄 Generating and sending pricing PDF to ${contactPhone}`);
+          
+          // Generate PDF, upload and send
+          const pdfPath = await PdfService.generatePricingPdf(DEFAULT_ORG_ID);
+          const mediaId = await WhatsAppService.uploadMedia(pdfPath, 'application/pdf');
+          await WhatsAppService.sendDocument(contactPhone, mediaId, 'Pricing_List.pdf', 'Sir, yeh rahi latest pricing list. Aap isey customer ko forward kar sakte hain.');
+          console.log(`📨 Sent Pricing PDF to ${contactPhone}`);
+          
+        } else if (extractedData.intent === 'TRANSACTION') {
+          // Save to Database (Pending)
+          const dbResult = await LedgerService.processTransaction(extractedData, DEFAULT_ORG_ID, messageId);
+          console.log(`✅ Saved to Database (Pending Confirmation): Transaction ID ${dbResult.transactionId}`);
+          
+          // Send WhatsApp Interactive Message
+          await WhatsAppService.sendInteractiveConfirmation(contactPhone, dbResult);
+          console.log(`📨 Sent WhatsApp confirmation to ${contactPhone}`);
+        }
       }
 
       // Add delay to respect Gemini rate limit
