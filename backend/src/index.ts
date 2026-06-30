@@ -4,6 +4,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
 import whatsappRoutes from './routes/whatsapp.routes';
+import apiRoutes from './routes/api.routes';
 
 // Load environment variables
 dotenv.config();
@@ -22,8 +23,11 @@ app.get('/health', (req: Request, res: Response) => {
   res.json({ status: 'OK', timestamp: new Date() });
 });
 
-// Register Webhook Routes
+// Register Webhook Routes (Meta API)
 app.use('/webhook/whatsapp', whatsappRoutes);
+
+// Register Dashboard REST APIs
+app.use('/api', apiRoutes);
 
 // Start the server
 app.listen(port, () => {
