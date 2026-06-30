@@ -1,7 +1,8 @@
 import { Worker, Queue } from 'bullmq';
 import { transcribeAudio } from '../services/whisper.service';
-import { extractTransactionDetails } from '../services/ai.service';
-// Note: In reality, we will use a db connection to save the result.
+import { extractTransactionDetails, extractTransactionDetailsFromImage } from '../services/ai.service';
+import { LedgerService } from '../services/ledger.service';
+import { WhatsAppService } from '../services/whatsapp.service';
 
 const connection = {
   host: process.env.REDIS_HOST || '127.0.0.1',
@@ -16,50 +17,71 @@ export const messageQueue = new Queue('process_whatsapp_message', { connection }
 const worker = new Worker(
   'process_whatsapp_message',
   async (job) => {
-    const { messageType, mediaUrl, textContent, contactPhone, messageId } = job.data;
-
-    console.log(`⏳ Processing Job ${job.id}: ${messageType} from ${contactPhone}`);
+    const data = job.data;
+    console.log(`⏳ Processing Job ${job.id} [${job.name}]`);
 
     try {
+      // 1. Handle Confirmation Button Click
+      if (job.name === 'confirm_transaction') {
+        const { transactionId, contactPhone } = data;
+        await LedgerService.confirmTransaction(transactionId);
+        await WhatsAppService.sendTextMessage(contactPhone, '✅ Confirmed! Ledger update ho gaya hai.');
+        console.log(`✅ Transaction ${transactionId} confirmed.`);
+        return { success: true, action: 'confirmed' };
+      } 
+      
+      // 2. Handle Edit Button Click
+      else if (job.name === 'edit_transaction') {
+        const { transactionId, contactPhone } = data;
+        await WhatsAppService.sendTextMessage(contactPhone, `❌ Transaction cancelled. Kripya naya voice note bheje, ya manual type karein (e.g. 'Sidhhi stone ka bill 120,000 karna hai').`);
+        console.log(`❌ Transaction ${transactionId} cancelled for edit.`);
+        return { success: true, action: 'edit' };
+      }
+
+      // 3. Handle Incoming Messages (Audio/Text/Image)
+      const { messageType, mediaUrl, textContent, contactPhone, messageId } = data;
       let extractedData;
 
       if (messageType === 'audio') {
-        // Step 1: Transcribe Audio using Groq (Super fast, Free, High Accuracy)
-        const transcription = await transcribeAudio(mediaUrl); // Needs local file path in reality
-
-        // Step 2: Extract Data using Gemini
+        const transcription = await transcribeAudio(mediaUrl); 
         extractedData = await extractTransactionDetails(transcription);
       }
       else if (messageType === 'text') {
-        // Direct extraction for text
         extractedData = await extractTransactionDetails(textContent);
       }
       else if (messageType === 'image') {
-        // Future: Extract data using Gemini Vision with the image URL
-        // extractedData = await extractFromImage(mediaUrl);
-        extractedData = { status: "Image processing coming soon!" };
+        console.log(`📸 Processing Image using Gemini Vision...`);
+        const { base64, mimeType } = await WhatsAppService.downloadMedia(mediaUrl);
+        extractedData = await extractTransactionDetailsFromImage(base64, mimeType);
       }
 
-      console.log(`✅ Extraction Complete for ${contactPhone}:`, extractedData);
+      // 4. Save to Ledger & Send Confirmation
+      if (extractedData) {
+        console.log(`✅ Extracted JSON Data:`, extractedData);
+        
+        const DEFAULT_ORG_ID = '00000000-0000-0000-0000-000000000000'; 
+        
+        // Save to Database (Pending)
+        const dbResult = await LedgerService.processTransaction(extractedData, DEFAULT_ORG_ID, messageId);
+        console.log(`✅ Saved to Database (Pending Confirmation): Transaction ID ${dbResult.transactionId}`);
+        
+        // Send WhatsApp Interactive Message
+        await WhatsAppService.sendInteractiveConfirmation(contactPhone, dbResult);
+        console.log(`📨 Sent WhatsApp confirmation to ${contactPhone}`);
+      }
 
-      // Step 3: Insert into PostgreSQL as PENDING_CONFIRMATION
-      // await db.transactions.create({ ... })
-
-      // Step 4: Send WhatsApp Confirmation Button Message
-      // await whatsapp.sendMessage(contactPhone, "Please confirm...")
-
-      // Add delay to respect Gemini rate limit (15 requests/min = 1 req every 4 seconds)
+      // Add delay to respect Gemini rate limit
       await new Promise(resolve => setTimeout(resolve, 4000));
 
       return { success: true, extractedData };
     } catch (error) {
       console.error(`❌ Job ${job.id} failed:`, error);
-      throw error; // Let BullMQ retry
+      throw error;
     }
   },
   {
     connection,
-    concurrency: 1 // Sequential processing
+    concurrency: 1
   }
 );
 

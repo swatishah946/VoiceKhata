@@ -80,6 +80,22 @@ router.post('/', async (req: Request, res: Response) => {
               contactPhone: contact.wa_id,
               messageId: messageIdHash
             });
+
+          } else if (message.type === 'interactive') {
+            // User clicked a button!
+            const buttonReply = message.interactive.button_reply;
+            if (buttonReply) {
+              const payloadId = buttonReply.id;
+              console.log(`🔘 User clicked button: ${payloadId}`);
+              
+              if (payloadId.startsWith('CONFIRM_')) {
+                const transactionId = payloadId.replace('CONFIRM_', '');
+                await messageQueue.add('confirm_transaction', { transactionId, contactPhone: contact.wa_id });
+              } else if (payloadId.startsWith('EDIT_')) {
+                const transactionId = payloadId.replace('EDIT_', '');
+                await messageQueue.add('edit_transaction', { transactionId, contactPhone: contact.wa_id });
+              }
+            }
           } else {
             console.log(`ℹ️ Received unsupported message type: ${message.type}`);
           }
