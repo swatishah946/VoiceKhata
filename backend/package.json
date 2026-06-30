@@ -11,6 +11,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@google/genai": "^2.10.0",
     "@google/generative-ai": "^0.24.1",
     "bullmq": "^5.79.2",
     "cors": "^2.8.6",
@@ -21,7 +22,8 @@
     "ioredis": "^5.11.1",
     "morgan": "^1.11.0",
     "node-fetch": "^2.7.0",
-    "pg": "^8.22.0"
+    "pg": "^8.22.0",
+    "uuid": "^14.0.1"
   },
   "devDependencies": {
     "@types/cors": "^2.8.19",
@@ -30,6 +32,8 @@
     "@types/morgan": "^1.9.10",
     "@types/node": "^26.0.1",
     "@types/node-fetch": "^2.6.13",
+    "@types/pg": "^8.20.0",
+    "@types/uuid": "^11.0.0",
     "nodemon": "^3.1.14",
     "ts-node": "^10.9.2",
     "typescript": "^6.0.3"

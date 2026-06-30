@@ -1,8 +1,4 @@
-import { GoogleGenerativeAI } from '@google/generative-ai';
-
-// Initialize Gemini
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
-const model = genAI.getGenerativeModel({ model: 'gemini-3.5-flash' });
+import fetch from 'node-fetch';
 
 const PROMPT_INSTRUCTIONS = `
     You are an intelligent AI billing and ledger assistant for a Kota stone business.
@@ -16,10 +12,11 @@ const PROMPT_INSTRUCTIONS = `
        - "worker_advance": Giving an advance payment to a laborer/worker (e.g., cutter, loader).
        - "freight_payment": Paying a transporter/truck driver for freight.
     2. Based on the type, extract the relevant names: party_name, worker_name, or transporter_name.
-    3. For "dispatch", extract: stone_type (e.g., "2x1½ Polish"), pieces_count, sqft_quantity, unit_rate, freight_charge (if mentioned), and advance_paid (if mentioned).
-    4. For payments/advances, extract the "amount".
-    5. ALWAYS include a confidence_level (0 to 1) for your overall extraction.
-    6. Return ONLY valid JSON (no markdown formatting, no explanations).
+    3. For "dispatch", extract: stone_type, pieces_count, sqft_quantity, unit_rate.
+    4. Also extract these charges if mentioned: freight_charge (bhada), loading_charge (loading), packing_charge (packing), and tax_percentage (e.g., 5 for 5% tax or GST).
+    5. For payments/advances, extract the "amount".
+    6. ALWAYS include a confidence_level (0 to 1) for your overall extraction.
+    7. Return ONLY valid JSON.
     
     RESPONSE FORMAT:
     {
@@ -33,15 +30,47 @@ const PROMPT_INSTRUCTIONS = `
       "unit_rate": 0,
       "amount": 0,
       "freight_charge": 0,
+      "loading_charge": 0,
+      "packing_charge": 0,
+      "tax_percentage": 0,
       "confidence_level": 0.95
     }
 `;
 
 export async function extractTransactionDetails(transcribedText: string) {
-  try {
-    const result = await model.generateContent([PROMPT_INSTRUCTIONS, `INPUT TEXT: "${transcribedText}"`]);
-    const responseText = result.response.text();
+  const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent';
+  const apiKey = process.env.GEMINI_API_KEY || '';
 
+  const headers: any = { 
+    'Content-Type': 'application/json',
+    'x-goog-api-key': apiKey
+  };
+
+  const payload = {
+    contents: [
+      {
+        parts: [
+          { text: PROMPT_INSTRUCTIONS },
+          { text: `INPUT TEXT: "${transcribedText}"` }
+        ]
+      }
+    ]
+  };
+
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(payload)
+    });
+
+    if (!response.ok) {
+      throw new Error(`Gemini API Error [${response.status}]: ${await response.text()}`);
+    }
+
+    const data: any = await response.json();
+    const responseText = data.candidates[0].content.parts[0].text;
+    
     // Clean up any potential markdown block backticks that Gemini might add
     const cleanJsonString = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
     return JSON.parse(cleanJsonString);
@@ -50,3 +79,52 @@ export async function extractTransactionDetails(transcribedText: string) {
     throw error;
   }
 }
+
+export async function extractTransactionDetailsFromImage(base64Image: string, mimeType: string) {
+  const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent';
+  const apiKey = process.env.GEMINI_API_KEY || '';
+
+  const headers: any = { 
+    'Content-Type': 'application/json',
+    'x-goog-api-key': apiKey
+  };
+
+  const payload = {
+    contents: [
+      {
+        parts: [
+          { text: PROMPT_INSTRUCTIONS },
+          { text: `Please extract the billing details from the attached handwritten/printed bill.` },
+          {
+            inlineData: {
+              mimeType: mimeType,
+              data: base64Image
+            }
+          }
+        ]
+      }
+    ]
+  };
+
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(payload)
+    });
+
+    if (!response.ok) {
+      throw new Error(`Gemini Vision API Error [${response.status}]: ${await response.text()}`);
+    }
+
+    const data: any = await response.json();
+    const responseText = data.candidates[0].content.parts[0].text;
+    
+    const cleanJsonString = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
+    return JSON.parse(cleanJsonString);
+  } catch (error) {
+    console.error('Error in Gemini Vision extraction:', error);
+    throw error;
+  }
+}
+
