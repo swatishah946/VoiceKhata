@@ -6,10 +6,15 @@ import { WhatsAppService } from '../services/whatsapp.service';
 import { PdfService } from '../services/pdf.service';
 import pool from '../db/index';
 
-const connection = {
-  host: process.env.REDIS_HOST || '127.0.0.1',
-  port: parseInt(process.env.REDIS_PORT || '6380', 10)
-};
+import IORedis from 'ioredis';
+
+const connection = process.env.REDIS_URL 
+  ? new IORedis(process.env.REDIS_URL, { maxRetriesPerRequest: null })
+  : new IORedis({
+      host: process.env.REDIS_HOST || '127.0.0.1',
+      port: parseInt(process.env.REDIS_PORT || '6380', 10),
+      maxRetriesPerRequest: null
+    });
 
 // Create the Queue where voice notes and images will be added
 export const messageQueue = new Queue('process_whatsapp_message', { connection });
