@@ -27,7 +27,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const navItems = [
     { name: 'Overview', href: '/dashboard', icon: LayoutDashboard },
     { name: 'Parties & Ledgers', href: '/dashboard/parties', icon: Users },
-    { name: 'Transactions', href: '/dashboard/transactions', icon: FileText },
   ];
 
   if (!mounted) return null; // Avoid hydration mismatch
