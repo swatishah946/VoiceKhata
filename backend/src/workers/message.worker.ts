@@ -75,9 +75,17 @@ const worker = new Worker(
 
       // 4. Handle Intents & Execute Logic
       if (extractedData) {
-        console.log(`✅ Extracted JSON Data:`, extractedData);
-        
         const DEFAULT_ORG_ID = '00000000-0000-0000-0000-000000000000'; 
+        
+        // Ensure default org exists to prevent Foreign Key constraint errors
+        await pool.query(
+          `INSERT INTO organizations (id, name, owner_phone) 
+           VALUES ($1, 'VoiceKhata Admin', '+10000000000') 
+           ON CONFLICT (id) DO NOTHING`,
+          [DEFAULT_ORG_ID]
+        );
+
+        console.log(`💾 Saving extracted data to database...`);
         
         if (extractedData.intent === 'UPDATE_PRICE') {
           console.log(`📝 Updating price for ${extractedData.updated_stone_type} to ₹${extractedData.updated_rate}`);
