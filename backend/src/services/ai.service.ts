@@ -46,10 +46,10 @@ const PROMPT_INSTRUCTIONS = `
 `;
 
 export async function extractTransactionDetails(transcribedText: string) {
-  const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent';
+  const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
   const apiKey = process.env.GEMINI_API_KEY || '';
 
-  const headers: any = { 
+  const headers: any = {
     'Content-Type': 'application/json',
     'x-goog-api-key': apiKey
   };
@@ -78,7 +78,7 @@ export async function extractTransactionDetails(transcribedText: string) {
 
     const data: any = await response.json();
     const responseText = data.candidates[0].content.parts[0].text;
-    
+
     // Clean up any potential markdown block backticks that Gemini might add
     const cleanJsonString = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
     return JSON.parse(cleanJsonString);
@@ -89,10 +89,10 @@ export async function extractTransactionDetails(transcribedText: string) {
 }
 
 export async function extractTransactionDetailsFromImage(base64Image: string, mimeType: string) {
-  const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent';
+  const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
   const apiKey = process.env.GEMINI_API_KEY || '';
 
-  const headers: any = { 
+  const headers: any = {
     'Content-Type': 'application/json',
     'x-goog-api-key': apiKey
   };
@@ -127,7 +127,7 @@ export async function extractTransactionDetailsFromImage(base64Image: string, mi
 
     const data: any = await response.json();
     const responseText = data.candidates[0].content.parts[0].text;
-    
+
     const cleanJsonString = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
     return JSON.parse(cleanJsonString);
   } catch (error) {
