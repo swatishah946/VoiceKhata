@@ -50,7 +50,18 @@ const worker = new Worker(
       let extractedData;
 
       if (messageType === 'audio') {
-        const transcription = await transcribeAudio(mediaUrl); 
+        console.log(`🎤 Downloading Twilio audio to temp file...`);
+        const { base64 } = await WhatsAppService.downloadMedia(mediaUrl);
+        const fs = require('fs');
+        const os = require('os');
+        const path = require('path');
+        const tempPath = path.join(os.tmpdir(), `twilio_audio_${Date.now()}.ogg`);
+        fs.writeFileSync(tempPath, Buffer.from(base64, 'base64'));
+
+        console.log(`🗣️ Sending to Groq Whisper for transcription...`);
+        const transcription = await transcribeAudio(tempPath); 
+        fs.unlinkSync(tempPath); // cleanup
+        
         extractedData = await extractTransactionDetails(transcription);
       }
       else if (messageType === 'text') {

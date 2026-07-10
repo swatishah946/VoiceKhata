@@ -16,6 +16,7 @@ const port = process.env.PORT || 3000;
 app.use(helmet());
 app.use(cors());
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 app.use(morgan('dev'));
 
 // Basic health check route
@@ -28,6 +29,10 @@ app.use('/webhook/whatsapp', whatsappRoutes);
 
 // Register Dashboard REST APIs
 app.use('/api', apiRoutes);
+
+// Serve static PDFs for Twilio to download
+import path from 'path';
+app.use('/pdfs', express.static(path.join(process.cwd(), 'public', 'pdfs')));
 
 // Start the server
 app.listen(port, () => {

@@ -1,186 +1,121 @@
+import twilio from 'twilio';
 import fetch from 'node-fetch';
-import FormData from 'form-data';
 import * as fs from 'fs';
+import path from 'path';
 
 export class WhatsAppService {
-  private static getApiUrl() {
-    const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
-    return `https://graph.facebook.com/v19.0/${phoneNumberId}/messages`;
+  private static getClient() {
+    const accountSid = process.env.TWILIO_ACCOUNT_SID;
+    const authToken = process.env.TWILIO_AUTH_TOKEN;
+    if (!accountSid || !authToken) throw new Error('Twilio credentials missing in .env');
+    return twilio(accountSid, authToken);
   }
 
-  private static getHeaders() {
-    return {
-      'Authorization': `Bearer ${process.env.WHATSAPP_ACCESS_TOKEN}`,
-      'Content-Type': 'application/json'
-    };
+  private static getFromNumber() {
+    return `whatsapp:${process.env.TWILIO_PHONE_NUMBER || '+14155238886'}`;
   }
 
   /**
    * Send a standard text message
    */
   static async sendTextMessage(to: string, text: string) {
-    const payload = {
-      messaging_product: 'whatsapp',
-      recipient_type: 'individual',
-      to,
-      type: 'text',
-      text: { body: text }
-    };
-
     try {
-      const response = await fetch(this.getApiUrl(), {
-        method: 'POST',
-        headers: this.getHeaders(),
-        body: JSON.stringify(payload)
-      });
+      const client = this.getClient();
+      // Ensure the 'to' number has the whatsapp: prefix
+      const formattedTo = to.startsWith('whatsapp:') ? to : `whatsapp:+${to.replace('+', '')}`;
       
-      if (!response.ok) {
-        console.error('WhatsApp Text API Error:', await response.text());
-      }
+      await client.messages.create({
+        body: text,
+        from: this.getFromNumber(),
+        to: formattedTo
+      });
+      console.log(`📨 Sent Twilio message to ${formattedTo}`);
     } catch (err) {
-      console.error('Failed to send WhatsApp message:', err);
+      console.error('Failed to send Twilio message:', err);
     }
   }
 
   /**
    * Send an interactive button message to confirm a transaction
+   * Note: Twilio Sandbox doesn't support rich interactive buttons well, 
+   * so we fall back to a simple text prompt.
    */
   static async sendInteractiveConfirmation(to: string, dbResult: any) {
     const summaryText = `📄 *New Bill Generated (Pending)*\n` +
-                        `Total Amount: ₹${dbResult.total_amount}\n` +
-                        `\nKya yeh sahi hai? (Is this correct?)`;
+                        `Total Amount: ₹${dbResult.total_amount}\n\n` +
+                        `Kya yeh sahi hai? (Is this correct?)\n` +
+                        `👉 Reply with exactly: *CONFIRM_${dbResult.transactionId}* to confirm\n` +
+                        `👉 Reply with exactly: *EDIT_${dbResult.transactionId}* to cancel`;
 
-    const payload = {
-      messaging_product: 'whatsapp',
-      recipient_type: 'individual',
-      to,
-      type: 'interactive',
-      interactive: {
-        type: 'button',
-        body: {
-          text: summaryText
-        },
-        action: {
-          buttons: [
-            {
-              type: 'reply',
-              reply: {
-                id: `CONFIRM_${dbResult.transactionId}`,
-                title: '✅ Sahi Hai'
-              }
-            },
-            {
-              type: 'reply',
-              reply: {
-                id: `EDIT_${dbResult.transactionId}`,
-                title: '❌ Galat Hai'
-              }
-            }
-          ]
-        }
-      }
-    };
-
-    try {
-      const response = await fetch(this.getApiUrl(), {
-        method: 'POST',
-        headers: this.getHeaders(),
-        body: JSON.stringify(payload)
-      });
-      
-      if (!response.ok) {
-        console.error('WhatsApp Interactive API Error:', await response.text());
-      }
-    } catch (err) {
-      console.error('Failed to send WhatsApp interactive message:', err);
-    }
+    await this.sendTextMessage(to, summaryText);
   }
 
   /**
-   * Download media (like an image) from the WhatsApp Cloud API
+   * Download media (like an image/audio) from the Twilio API
    */
-  static async downloadMedia(mediaId: string): Promise<{ base64: string, mimeType: string }> {
-    // 1. Get the media URL from Meta
-    const urlResponse = await fetch(`https://graph.facebook.com/v19.0/${mediaId}`, {
-      headers: this.getHeaders()
-    });
-    
-    if (!urlResponse.ok) {
-      throw new Error(`Failed to get media URL: ${await urlResponse.text()}`);
-    }
-    
-    const urlData: any = await urlResponse.json();
-    const mediaUrl = urlData.url;
-    const mimeType = urlData.mime_type;
+  static async downloadMedia(mediaUrl: string): Promise<{ base64: string, mimeType: string }> {
+    // Twilio provides a direct URL, but it requires HTTP Basic Auth to download
+    const accountSid = process.env.TWILIO_ACCOUNT_SID;
+    const authToken = process.env.TWILIO_AUTH_TOKEN;
+    const authHeader = 'Basic ' + Buffer.from(`${accountSid}:${authToken}`).toString('base64');
 
-    // 2. Download the actual binary data
-    const mediaResponse = await fetch(mediaUrl, {
-      headers: { 'Authorization': `Bearer ${process.env.WHATSAPP_ACCESS_TOKEN}` }
+    const response = await fetch(mediaUrl, {
+      headers: { 'Authorization': authHeader }
     });
 
-    if (!mediaResponse.ok) {
-      throw new Error(`Failed to download media binary: ${await mediaResponse.text()}`);
+    if (!response.ok) {
+      throw new Error(`Failed to download Twilio media: ${await response.text()}`);
     }
 
-    const arrayBuffer = await mediaResponse.arrayBuffer();
+    const contentType = response.headers.get('content-type') || 'application/octet-stream';
+    const arrayBuffer = await response.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
     const base64 = buffer.toString('base64');
 
-    return { base64, mimeType };
+    return { base64: base64, mimeType: contentType };
   }
 
   /**
-   * Upload media to Meta to get a media ID
+   * In Twilio, we don't pre-upload media. We just pass the public URL later.
    */
   static async uploadMedia(filePath: string, mimeType: string): Promise<string> {
-    const url = `https://graph.facebook.com/v19.0/${process.env.WHATSAPP_PHONE_NUMBER_ID}/media`;
-    
-    const formData = new FormData();
-    formData.append('file', fs.createReadStream(filePath));
-    formData.append('type', mimeType);
-    formData.append('messaging_product', 'whatsapp');
-
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${process.env.WHATSAPP_ACCESS_TOKEN}`
-      },
-      body: formData
-    });
-
-    if (!response.ok) {
-      throw new Error(`Failed to upload media: ${await response.text()}`);
-    }
-
-    const data: any = await response.json();
-    return data.id;
+    return filePath; 
   }
 
   /**
-   * Send a Document (e.g. PDF) to a user via Media ID
+   * Send a Document (e.g. PDF) to a user
+   * Twilio requires a PUBLIC URL to send a document. So we copy the local PDF 
+   * to our Express public folder and serve it so Twilio can download it!
    */
-  static async sendDocument(to: string, mediaId: string, filename: string, caption: string) {
-    const payload = {
-      messaging_product: 'whatsapp',
-      recipient_type: 'individual',
-      to: to,
-      type: 'document',
-      document: {
-        id: mediaId,
-        caption: caption,
-        filename: filename
+  static async sendDocument(to: string, filePath: string, filename: string, caption: string) {
+    try {
+      const client = this.getClient();
+      const formattedTo = to.startsWith('whatsapp:') ? to : `whatsapp:+${to.replace('+', '')}`;
+      
+      // Move the local file to a publicly accessible folder in Express
+      const publicDir = path.join(process.cwd(), 'public', 'pdfs');
+      if (!fs.existsSync(publicDir)) {
+        fs.mkdirSync(publicDir, { recursive: true });
       }
-    };
+      
+      const newPath = path.join(publicDir, filename);
+      fs.copyFileSync(filePath, newPath);
+      
+      // Get the live Render URL (using a fallback just in case)
+      const baseUrl = process.env.RENDER_EXTERNAL_URL || 'https://voicekhata-yqsj.onrender.com';
+      const publicUrl = `${baseUrl}/pdfs/${filename}`;
+      
+      console.log(`🌍 Hosting PDF publicly for Twilio at: ${publicUrl}`);
 
-    const response = await fetch(this.getApiUrl(), {
-      method: 'POST',
-      headers: this.getHeaders(),
-      body: JSON.stringify(payload)
-    });
-
-    if (!response.ok) {
-      console.error('WhatsApp Document Send Error:', await response.text());
+      await client.messages.create({
+        body: caption,
+        from: this.getFromNumber(),
+        to: formattedTo,
+        mediaUrl: [publicUrl]
+      });
+      console.log(`📨 Sent Twilio PDF document to ${formattedTo}`);
+    } catch (err) {
+      console.error('Failed to send Twilio PDF:', err);
     }
   }
 }
-
