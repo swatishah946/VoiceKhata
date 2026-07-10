@@ -6,7 +6,7 @@
   "scripts": {
     "build": "echo 'No build step required, using ts-node'",
     "dev": "nodemon src/index.ts",
-    "start": "ts-node src/index.ts"
+    "start": "ts-node --transpile-only src/index.ts"
   },
   "keywords": [],
   "author": "",
