@@ -89,7 +89,7 @@ export async function extractTransactionDetails(transcribedText: string) {
 }
 
 export async function extractTransactionDetailsFromImage(base64Image: string, mimeType: string) {
-  const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
+  const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent';
   const apiKey = process.env.GEMINI_API_KEY || '';
 
   const headers: any = {
