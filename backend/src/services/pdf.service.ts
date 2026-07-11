@@ -13,10 +13,10 @@ export class PdfService {
       try {
         // Fetch current prices from the database
         const result = await pool.query(
-          `SELECT stone_type, rate_per_sqft 
-           FROM price_list 
-           WHERE organization_id = $1 
-           ORDER BY stone_type ASC`,
+          `SELECT size_format as stone_type, current_price as rate_per_sqft 
+           FROM stone_types 
+           WHERE organization_id = $1 AND is_active = TRUE
+           ORDER BY size_format ASC`,
           [organizationId]
         );
         const prices = result.rows;

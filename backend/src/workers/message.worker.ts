@@ -128,10 +128,10 @@ const worker = new Worker(
           
           // Update DB
           await pool.query(
-            `INSERT INTO price_list (organization_id, stone_type, rate_per_sqft)
-             VALUES ($1, $2, $3)
-             ON CONFLICT (organization_id, stone_type) 
-             DO UPDATE SET rate_per_sqft = EXCLUDED.rate_per_sqft, updated_at = CURRENT_TIMESTAMP`,
+            `INSERT INTO stone_types (organization_id, size_format, finish, current_price)
+             VALUES ($1, $2, 'Standard', $3)
+             ON CONFLICT (organization_id, size_format, finish) 
+             DO UPDATE SET current_price = EXCLUDED.current_price, updated_at = CURRENT_TIMESTAMP`,
             [DEFAULT_ORG_ID, extractedData.updated_stone_type, extractedData.updated_rate]
           );
           
