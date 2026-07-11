@@ -24,8 +24,12 @@ const PROMPT_INSTRUCTIONS = `
     4. For "GET_KHATA" intent:
        - Extract the person_name (the name of the party or worker they are asking about).
 
-    5. ALWAYS include a confidence_level (0 to 1) for your overall extraction.
-    6. Return ONLY valid JSON.
+    5. CRITICAL: ALWAYS translate/transliterate ALL names (party_name, worker_name, transporter_name, person_name) into standard ENGLISH letters.
+       - Even if the user speaks in Hindi (e.g. "रमेश", "मुंशी"), you MUST output "Ramesh", "Munshi" in the JSON.
+       - This is required to maintain database search consistency.
+
+    6. ALWAYS include a confidence_level (0 to 1) for your overall extraction.
+    7. Return ONLY valid JSON.
     
     RESPONSE FORMAT:
     {
