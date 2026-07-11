@@ -54,13 +54,14 @@ router.post('/', async (req: Request, res: Response) => {
       }
     } else {
       // It's a text message (or an interactive button reply)
-      // Note: Twilio sends button replies as text in body.Body
-      if (bodyText && bodyText.startsWith('CONFIRM_')) {
-        const transactionId = bodyText.replace('CONFIRM_', '');
-        await messageQueue.add('confirm_transaction', { transactionId, contactPhone: contactPhone });
-      } else if (bodyText && bodyText.startsWith('EDIT_')) {
-        const transactionId = bodyText.replace('EDIT_', '');
-        await messageQueue.add('edit_transaction', { transactionId, contactPhone: contactPhone });
+      const lowerText = bodyText ? bodyText.trim().toLowerCase() : '';
+      const yesWords = ['yes', 'y', 'haan', 'sahi hai', 'confirm'];
+      const noWords = ['no', 'n', 'nahin', 'galat', 'edit', 'cancel'];
+
+      if (yesWords.includes(lowerText)) {
+        await messageQueue.add('confirm_latest_transaction', { contactPhone: contactPhone });
+      } else if (noWords.includes(lowerText)) {
+        await messageQueue.add('cancel_latest_transaction', { contactPhone: contactPhone });
       } else {
         console.log(`📝 Received Twilio Text Message! Adding to Queue...`);
         await messageQueue.add('process_text', {

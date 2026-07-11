@@ -142,8 +142,10 @@ export class LedgerService {
 
       return {
       transactionId,
+      transaction_type,
       subtotal_amount,
       total_amount,
+      advance_paid,
       status: 'pending_confirmation',
       requires_approval: true
     };

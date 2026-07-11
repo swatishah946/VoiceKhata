@@ -41,11 +41,16 @@ export class WhatsAppService {
    * so we fall back to a simple text prompt.
    */
   static async sendInteractiveConfirmation(to: string, dbResult: any) {
-    const summaryText = `📄 *New Bill Generated (Pending)*\n` +
-                        `Total Amount: ₹${dbResult.total_amount}\n\n` +
+    let amountText = `Total Bill Amount: ₹${dbResult.total_amount}`;
+    if (dbResult.transaction_type === 'payment' || dbResult.transaction_type === 'worker_advance' || dbResult.transaction_type === 'freight_payment') {
+      amountText = `Amount Paid/Advance: ₹${dbResult.advance_paid}`;
+    }
+
+    const summaryText = `📄 *New Entry Generated (Pending)*\n` +
+                        `${amountText}\n\n` +
                         `Kya yeh sahi hai? (Is this correct?)\n` +
-                        `👉 Reply with exactly: *CONFIRM_${dbResult.transactionId}* to confirm\n` +
-                        `👉 Reply with exactly: *EDIT_${dbResult.transactionId}* to cancel`;
+                        `👉 Reply *Yes* to confirm\n` +
+                        `👉 Reply *No* to cancel`;
 
     await this.sendTextMessage(to, summaryText);
   }

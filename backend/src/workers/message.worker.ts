@@ -28,21 +28,46 @@ const worker = new Worker(
     console.log(`⏳ Processing Job ${job.id} [${job.name}]`);
 
     try {
-      // 1. Handle Confirmation Button Click
-      if (job.name === 'confirm_transaction') {
-        const { transactionId, contactPhone } = data;
-        await LedgerService.confirmTransaction(transactionId);
-        await WhatsAppService.sendTextMessage(contactPhone, '✅ Confirmed! Ledger update ho gaya hai.');
-        console.log(`✅ Transaction ${transactionId} confirmed.`);
+      // 1. Handle Natural Language Confirm ("Yes")
+      if (job.name === 'confirm_latest_transaction') {
+        const { contactPhone } = data;
+        const DEFAULT_ORG_ID = '00000000-0000-0000-0000-000000000000';
+        
+        const res = await pool.query(
+          `SELECT id FROM transactions WHERE organization_id = $1 AND status = 'pending_confirmation' ORDER BY created_at DESC LIMIT 1`, 
+          [DEFAULT_ORG_ID]
+        );
+
+        if (res.rows.length > 0) {
+          const transactionId = res.rows[0].id;
+          await LedgerService.confirmTransaction(transactionId);
+          await WhatsAppService.sendTextMessage(contactPhone, '✅ Confirmed! Ledger update ho gaya hai. Aap Vercel Dashboard check kar sakte hain.');
+          console.log(`✅ Transaction ${transactionId} confirmed.`);
+        } else {
+          await WhatsAppService.sendTextMessage(contactPhone, '❌ Koi pending transaction nahi mila.');
+        }
         return { success: true, action: 'confirmed' };
       } 
       
-      // 2. Handle Edit Button Click
-      else if (job.name === 'edit_transaction') {
-        const { transactionId, contactPhone } = data;
-        await WhatsAppService.sendTextMessage(contactPhone, `❌ Transaction cancelled. Kripya naya voice note bheje, ya manual type karein (e.g. 'Sidhhi stone ka bill 120,000 karna hai').`);
-        console.log(`❌ Transaction ${transactionId} cancelled for edit.`);
-        return { success: true, action: 'edit' };
+      // 2. Handle Natural Language Cancel ("No")
+      else if (job.name === 'cancel_latest_transaction') {
+        const { contactPhone } = data;
+        const DEFAULT_ORG_ID = '00000000-0000-0000-0000-000000000000';
+        
+        const res = await pool.query(
+          `SELECT id FROM transactions WHERE organization_id = $1 AND status = 'pending_confirmation' ORDER BY created_at DESC LIMIT 1`, 
+          [DEFAULT_ORG_ID]
+        );
+
+        if (res.rows.length > 0) {
+          const transactionId = res.rows[0].id;
+          await pool.query(`UPDATE transactions SET status = 'cancelled' WHERE id = $1`, [transactionId]);
+          await WhatsAppService.sendTextMessage(contactPhone, `❌ Transaction cancelled. Kripya naya voice note bhejein.`);
+          console.log(`❌ Transaction ${transactionId} cancelled for edit.`);
+        } else {
+          await WhatsAppService.sendTextMessage(contactPhone, '❌ Koi pending transaction nahi mila.');
+        }
+        return { success: true, action: 'cancel' };
       }
 
       // 3. Handle Incoming Messages (Audio/Text/Image)
