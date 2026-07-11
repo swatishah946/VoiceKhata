@@ -17,7 +17,18 @@ const connection = process.env.REDIS_URL
     });
 
 // Create the Queue where voice notes and images will be added
-export const messageQueue = new Queue('process_whatsapp_message', { connection: connection as any });
+export const messageQueue = new Queue('process_whatsapp_message', { 
+  connection: connection as any,
+  defaultJobOptions: {
+    attempts: 5,
+    backoff: {
+      type: 'exponential',
+      delay: 2000
+    },
+    removeOnComplete: true,
+    removeOnFail: false
+  }
+});
 
 // Initialize the Worker
 // Concurrency: 1 ensures that we process sequentially and don't hit the 15/min Gemini limit

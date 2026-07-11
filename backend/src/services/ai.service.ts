@@ -51,7 +51,8 @@ const PROMPT_INSTRUCTIONS = `
 `;
 
 export async function extractTransactionDetails(transcribedText: string) {
-  const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent';
+  const primaryUrl = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent';
+  const fallbackUrl = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent';
   const apiKey = process.env.GEMINI_API_KEY || '';
 
   const headers: any = {
@@ -70,7 +71,7 @@ export async function extractTransactionDetails(transcribedText: string) {
     ]
   };
 
-  try {
+  async function tryExtract(url: string, modelName: string) {
     const response = await fetch(url, {
       method: 'POST',
       headers,
@@ -78,26 +79,48 @@ export async function extractTransactionDetails(transcribedText: string) {
     });
 
     if (!response.ok) {
-      throw new Error(`Gemini API Error [${response.status}]: ${await response.text()}`);
+      const errText = await response.text();
+      const err = new Error(`Gemini API Error [${response.status}]: ${errText}`);
+      (err as any).status = response.status;
+      throw err;
     }
 
     const data: any = await response.json();
     const responseText = data.candidates[0].content.parts[0].text;
-
-    // Clean up any potential markdown block backticks that Gemini might add
     const cleanJsonString = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
     return JSON.parse(cleanJsonString);
-  } catch (error) {
-    console.error('Error in Gemini extraction:', error);
-    throw error;
+  }
+
+  try {
+    console.log(`🤖 Calling Gemini 3.5 Flash...`);
+    return await tryExtract(primaryUrl, 'gemini-3.5-flash');
+  } catch (error: any) {
+    const status = error.status || (error.message && error.message.match(/\[(\d+)\]/)?.[1]);
+    
+    if (status == 503 || status == 429) {
+      console.log(`⚠️ Gemini rate limited (${status}), will retry with backoff...`);
+      throw error; // Throw to trigger BullMQ retry
+    }
+
+    console.log(`🔄 Gemini 3.5 Flash had error, trying Gemini 1.5 Flash...`);
+    try {
+      return await tryExtract(fallbackUrl, 'gemini-1.5-flash-latest');
+    } catch (fallbackError: any) {
+      const fallbackStatus = fallbackError.status || (fallbackError.message && fallbackError.message.match(/\[(\d+)\]/)?.[1]);
+      if (fallbackStatus == 503 || fallbackStatus == 429) {
+        throw fallbackError; // Throw to trigger BullMQ retry
+      }
+      throw new Error(`Both models failed: ${fallbackError.message}`);
+    }
   }
 }
 
 export async function extractTransactionDetailsFromImage(base64Image: string, mimeType: string) {
-  const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent';
+  const primaryUrl = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent';
+  const fallbackUrl = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent';
   const apiKey = process.env.GEMINI_API_KEY || '';
 
-  const headers: any = {
+  const headers: any = { 
     'Content-Type': 'application/json',
     'x-goog-api-key': apiKey
   };
@@ -119,7 +142,7 @@ export async function extractTransactionDetailsFromImage(base64Image: string, mi
     ]
   };
 
-  try {
+  async function tryExtract(url: string, modelName: string) {
     const response = await fetch(url, {
       method: 'POST',
       headers,
@@ -127,17 +150,38 @@ export async function extractTransactionDetailsFromImage(base64Image: string, mi
     });
 
     if (!response.ok) {
-      throw new Error(`Gemini Vision API Error [${response.status}]: ${await response.text()}`);
+      const errText = await response.text();
+      const err = new Error(`Gemini Vision API Error [${response.status}]: ${errText}`);
+      (err as any).status = response.status;
+      throw err;
     }
 
     const data: any = await response.json();
     const responseText = data.candidates[0].content.parts[0].text;
-
     const cleanJsonString = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
     return JSON.parse(cleanJsonString);
-  } catch (error) {
-    console.error('Error in Gemini Vision extraction:', error);
-    throw error;
+  }
+
+  try {
+    console.log(`📸 Calling Gemini Vision 3.5 Flash...`);
+    return await tryExtract(primaryUrl, 'gemini-3.5-flash');
+  } catch (error: any) {
+    const status = error.status || (error.message && error.message.match(/\[(\d+)\]/)?.[1]);
+    
+    if (status == 503 || status == 429) {
+      console.log(`⚠️ Gemini Vision rate limited (${status}), will retry with backoff...`);
+      throw error; // Throw to trigger BullMQ retry
+    }
+
+    console.log(`🔄 Gemini Vision 3.5 Flash had error, trying Gemini 1.5 Flash...`);
+    try {
+      return await tryExtract(fallbackUrl, 'gemini-1.5-flash-latest');
+    } catch (fallbackError: any) {
+      const fallbackStatus = fallbackError.status || (fallbackError.message && fallbackError.message.match(/\[(\d+)\]/)?.[1]);
+      if (fallbackStatus == 503 || fallbackStatus == 429) {
+        throw fallbackError; // Throw to trigger BullMQ retry
+      }
+      throw new Error(`Both Vision models failed: ${fallbackError.message}`);
+    }
   }
 }
-
