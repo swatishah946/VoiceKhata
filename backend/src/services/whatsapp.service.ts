@@ -41,16 +41,34 @@ export class WhatsAppService {
    * so we fall back to a simple text prompt.
    */
   static async sendInteractiveConfirmation(to: string, dbResult: any) {
-    let amountText = `Total Bill Amount: ₹${dbResult.total_amount}`;
+    const data = dbResult.extractedData || {};
+    let summaryText = `📄 *New Entry Generated (Pending)*\n\n`;
+
     if (dbResult.transaction_type === 'payment' || dbResult.transaction_type === 'worker_advance' || dbResult.transaction_type === 'freight_payment') {
-      amountText = `Amount Paid/Advance: ₹${dbResult.advance_paid}`;
+      const name = data.party_name || data.worker_name || 'Unknown';
+      summaryText += `*Name:* ${name}\n`;
+      summaryText += `*Type:* ${dbResult.transaction_type.toUpperCase()}\n`;
+      summaryText += `*Amount Paid/Advance:* ₹${dbResult.advance_paid}\n\n`;
+    } else {
+      const name = data.party_name || 'Unknown Customer';
+      summaryText += `*Customer:* ${name}\n`;
+      if (data.stone_type) summaryText += `*Stone Type:* ${data.stone_type}\n`;
+      if (data.pieces_count) summaryText += `*Pieces:* ${data.pieces_count}\n`;
+      if (data.sqft_quantity) summaryText += `*Quantity:* ${data.sqft_quantity} sqft\n`;
+      if (data.unit_rate) summaryText += `*Rate:* ₹${data.unit_rate}/sqft\n`;
+      
+      const sub = (data.sqft_quantity || 0) * (data.unit_rate || 0);
+      if (sub > 0) summaryText += `*Subtotal:* ₹${sub.toFixed(2)}\n`;
+      
+      if (data.loading_charge) summaryText += `*Loading:* +₹${data.loading_charge}\n`;
+      if (data.freight_charge) summaryText += `*Freight Deducted:* -₹${data.freight_charge}\n`;
+      
+      summaryText += `\n*Total Bill Amount:* ₹${parseFloat(dbResult.total_amount).toFixed(2)}\n\n`;
     }
 
-    const summaryText = `📄 *New Entry Generated (Pending)*\n` +
-                        `${amountText}\n\n` +
-                        `Kya yeh sahi hai? (Is this correct?)\n` +
-                        `👉 Reply *Yes* to confirm\n` +
-                        `👉 Reply *No* to cancel`;
+    summaryText += `Kya yeh sahi hai? (Is this correct?)\n`;
+    summaryText += `👉 Reply *Yes* to confirm\n`;
+    summaryText += `👉 Reply *No* to cancel`;
 
     await this.sendTextMessage(to, summaryText);
   }

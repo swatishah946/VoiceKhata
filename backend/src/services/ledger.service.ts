@@ -178,7 +178,8 @@ export class LedgerService {
       total_amount,
       advance_paid,
       status: 'pending_confirmation',
-      requires_approval: true
+      requires_approval: true,
+      extractedData
     };
   }
 
