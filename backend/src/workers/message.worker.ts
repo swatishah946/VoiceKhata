@@ -41,7 +41,7 @@ const worker = new Worker(
         if (res.rows.length > 0) {
           const transactionId = res.rows[0].id;
           await LedgerService.confirmTransaction(transactionId);
-          await WhatsAppService.sendTextMessage(contactPhone, '✅ Confirmed! Ledger update ho gaya hai. Aap Vercel Dashboard check kar sakte hain.');
+          await WhatsAppService.sendTextMessage(contactPhone, '✅ Confirmed! Ledger update ho gaya hai.');
           console.log(`✅ Transaction ${transactionId} confirmed.`);
         } else {
           await WhatsAppService.sendTextMessage(contactPhone, '❌ Koi pending transaction nahi mila.');
@@ -138,6 +138,21 @@ const worker = new Worker(
           const mediaId = await WhatsAppService.uploadMedia(pdfPath, 'application/pdf');
           await WhatsAppService.sendDocument(contactPhone, mediaId, 'Pricing_List.pdf', 'Sir, yeh rahi latest pricing list. Aap isey customer ko forward kar sakte hain.');
           console.log(`📨 Sent Pricing PDF to ${contactPhone}`);
+          
+        } else if (extractedData.intent === 'GET_KHATA') {
+          console.log(`📄 Fetching Khata for ${extractedData.person_name}...`);
+          
+          const person = await LedgerService.findPersonByName(extractedData.person_name, DEFAULT_ORG_ID);
+          
+          if (person) {
+            const pdfPath = await PdfService.generateKhataPdf(DEFAULT_ORG_ID, person.id, person.type, person.name);
+            const mediaId = await WhatsAppService.uploadMedia(pdfPath, 'application/pdf');
+            await WhatsAppService.sendDocument(contactPhone, mediaId, `Khata_${person.name.replace(/\s+/g, '_')}.pdf`, `Sir, yeh raha ${person.name} ka Khata statement.`);
+            console.log(`📨 Sent Khata PDF to ${contactPhone}`);
+          } else {
+            await WhatsAppService.sendTextMessage(contactPhone, `❌ Maaf karna, "${extractedData.person_name}" ke naam se koi khata nahi mila.`);
+            console.log(`❌ Khata not found for ${extractedData.person_name}`);
+          }
           
         } else if (extractedData.intent === 'TRANSACTION') {
           // Save to Database (Pending)

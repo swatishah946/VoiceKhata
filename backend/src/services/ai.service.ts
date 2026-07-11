@@ -9,7 +9,8 @@ const PROMPT_INSTRUCTIONS = `
     1. First, determine the INTENT. It must be one of:
        - "TRANSACTION": The user is recording a sale, dispatch, payment, or advance.
        - "UPDATE_PRICE": The user wants to change the price of a stone (e.g. "2x1.5 ka rate 32 kar do").
-       - "GET_PDF": The user is asking to send the price list or PDF (e.g. "price list bhej do").
+       - "GET_PDF": The user is asking to send the general price list or PDF (e.g. "price list bhej do").
+       - "GET_KHATA": The user is asking to see the ledger/account statement for a specific person (e.g. "Ramesh ka khata bhejo", "Ambika textile ka hisab bhejo").
        
     2. For "TRANSACTION" intent:
        - Determine transaction_type: "dispatch", "payment", "worker_advance", or "freight_payment".
@@ -20,16 +21,20 @@ const PROMPT_INSTRUCTIONS = `
     3. For "UPDATE_PRICE" intent:
        - Extract updated_stone_type (e.g. "2x1½" or "3x2") and updated_rate (the new numeric price).
 
-    4. ALWAYS include a confidence_level (0 to 1) for your overall extraction.
-    5. Return ONLY valid JSON.
+    4. For "GET_KHATA" intent:
+       - Extract the person_name (the name of the party or worker they are asking about).
+
+    5. ALWAYS include a confidence_level (0 to 1) for your overall extraction.
+    6. Return ONLY valid JSON.
     
     RESPONSE FORMAT:
     {
-      "intent": "TRANSACTION | UPDATE_PRICE | GET_PDF",
+      "intent": "TRANSACTION | UPDATE_PRICE | GET_PDF | GET_KHATA",
       "transaction_type": "dispatch | payment | worker_advance | freight_payment | null",
       "party_name": "...",
       "worker_name": "...",
       "transporter_name": "...",
+      "person_name": "...",
       "stone_type": "...",
       "pieces_count": 0,
       "sqft_quantity": 0,

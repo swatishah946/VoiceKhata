@@ -54,6 +54,37 @@ export class LedgerService {
   }
 
   /**
+   * Helper: Find a person (party or worker) by name using partial matching.
+   */
+  static async findPersonByName(name: string, organizationId: string): Promise<{ id: string, type: 'party' | 'worker', name: string } | null> {
+    if (!name) return null;
+    
+    const searchName = `%${name}%`;
+
+    // Try finding in parties first
+    const partyResult = await pool.query(
+      `SELECT id, name FROM parties WHERE organization_id = $1 AND name ILIKE $2 LIMIT 1`,
+      [organizationId, searchName]
+    );
+
+    if (partyResult.rows.length > 0) {
+      return { id: partyResult.rows[0].id, type: 'party', name: partyResult.rows[0].name };
+    }
+
+    // Try finding in workers
+    const workerResult = await pool.query(
+      `SELECT id, name FROM workers WHERE organization_id = $1 AND name ILIKE $2 LIMIT 1`,
+      [organizationId, searchName]
+    );
+
+    if (workerResult.rows.length > 0) {
+      return { id: workerResult.rows[0].id, type: 'worker', name: workerResult.rows[0].name };
+    }
+
+    return null;
+  }
+
+  /**
    * Math Engine: Process a transaction extracted by AI
    */
   static async processTransaction(extractedData: any, organizationId: string, whatsappMsgId: string = crypto.randomUUID()) {
