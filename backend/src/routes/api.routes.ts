@@ -114,4 +114,27 @@ router.get('/analytics', async (req: Request, res: Response) => {
   }
 });
 
+/**
+ * GET /workers
+ * Fetch all workers and their ledger balances
+ */
+router.get('/workers', async (req: Request, res: Response) => {
+  try {
+    const orgId = (req as any).user.orgId;
+    const result = await pool.query(
+      `SELECT w.id, w.name, 
+              l.advances_taken, l.net_due
+       FROM workers w
+       LEFT JOIN worker_ledger l ON w.id = l.worker_id
+       WHERE w.organization_id = $1
+       ORDER BY l.net_due ASC NULLS LAST`,
+      [orgId]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Error fetching workers:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 export default router;

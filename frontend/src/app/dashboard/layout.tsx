@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { getAuthToken } from '@/lib/api';
-import { LayoutDashboard, Users, FileText, LogOut, Mic, Menu, X } from 'lucide-react';
+import { LayoutDashboard, Users, FileText, LogOut, Mic, Menu, X, HardHat } from 'lucide-react';
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -27,6 +27,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const navItems = [
     { name: 'Overview', href: '/dashboard', icon: LayoutDashboard },
     { name: 'Parties & Ledgers', href: '/dashboard/parties', icon: Users },
+    { name: 'Workers & Advances', href: '/dashboard/workers', icon: HardHat },
   ];
 
   if (!mounted) return null; // Avoid hydration mismatch
