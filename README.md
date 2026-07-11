@@ -15,6 +15,21 @@ VoiceKhata allows the shop owner to simply send a **Voice Note on WhatsApp** (in
 
 ---
 
+## 📸 Project Showcase
+
+### WhatsApp Bot Interface (Testing Phase via Twilio)
+*Note: We leveraged the Twilio WhatsApp Sandbox API for our testing and rapid prototyping phase.*
+
+<div style="display: flex; flex-wrap: wrap; gap: 20px;">
+  <img src="readmeimages/whtsp_ss1.jpeg" alt="WhatsApp Interface 1" width="300"/>
+  <img src="readmeimages/wtsp_ss2.jpeg" alt="WhatsApp Interface 2" width="300"/>
+</div>
+
+### Next.js Analytics Dashboard
+<img src="readmeimages/nextjsdashboard.png" alt="Next.js Dashboard" width="700"/>
+
+---
+
 ## 🏗️ High-Level Architecture
 
 The system is fully decoupled, event-driven, and designed for high reliability.
@@ -41,7 +56,7 @@ graph TD
 ## 🚀 Key Technical Features
 
 ### 1. Robust Webhook & Queue System
-- Built a secure webhook endpoint for the Meta WhatsApp Cloud API.
+- Built a secure webhook endpoint for WhatsApp messaging (utilizing **Twilio** for the testing/prototyping phase and transitioning to Meta Cloud API).
 - Implemented **BullMQ & Redis** to handle incoming webhook spikes asynchronously. This ensures the Express server always returns an immediate `200 OK` to Meta, preventing timeout loops and duplicate message deliveries.
 - Implemented **Idempotency** using SHA-256 hashing on WhatsApp Message IDs to prevent double-processing during network retries.
 
@@ -72,8 +87,8 @@ graph TD
 * **Backend:** Node.js, Express, TypeScript
 * **Database:** PostgreSQL (Supabase)
 * **Message Broker:** Redis (Upstash) + BullMQ
-* **AI Models:** Google Gemini 1.5 Flash (Audio), Groq Llama-3-8B (NLP JSON Extraction)
-* **External APIs:** Meta WhatsApp Cloud API (Graph API v19.0)
+* **AI Models:** Google Gemini 3.5 Flash (Primary) / Gemini 1.5 Flash (Fallback)
+* **External APIs:** Twilio WhatsApp API (Testing), Meta WhatsApp Cloud API (Production)
 
 ---
 *Built with ❤️ for Indian Small Businesses.*
