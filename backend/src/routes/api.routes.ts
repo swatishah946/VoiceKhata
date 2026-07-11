@@ -37,7 +37,7 @@ router.get('/transactions', async (req: Request, res: Response) => {
     const orgId = (req as any).user.orgId;
     const result = await pool.query(
       `SELECT t.*, 
-              COALESCE(p.name, p.company_name) as party_name,
+              p.name as party_name,
               w.name as worker_name
        FROM transactions t
        LEFT JOIN parties p ON t.party_id = p.id
@@ -62,7 +62,7 @@ router.get('/parties', async (req: Request, res: Response) => {
   try {
     const orgId = (req as any).user.orgId;
     const result = await pool.query(
-      `SELECT p.id, p.name, p.company_name, p.type, 
+      `SELECT p.id, p.name, p.type, 
               b.total_billed, b.total_paid, b.outstanding_balance
        FROM parties p
        LEFT JOIN party_balances b ON p.id = b.party_id
