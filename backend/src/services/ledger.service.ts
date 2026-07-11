@@ -59,12 +59,18 @@ export class LedgerService {
   static async findPersonByName(name: string, organizationId: string): Promise<{ id: string, type: 'party' | 'worker', name: string } | null> {
     if (!name) return null;
     
-    const searchName = `%${name}%`;
+    // Split name into words (e.g. "Munshi Ramesh" -> ["Munshi", "Ramesh"])
+    const words = name.trim().split(/\s+/);
+    
+    // Build a query that requires ALL words to match anywhere in the name, in any order
+    // e.g. name ILIKE '%Munshi%' AND name ILIKE '%Ramesh%'
+    const ilikeConditions = words.map((_, i) => `name ILIKE $${i + 2}`).join(' AND ');
+    const queryParams = [organizationId, ...words.map(w => `%${w}%`)];
 
     // Try finding in parties first
     const partyResult = await pool.query(
-      `SELECT id, name FROM parties WHERE organization_id = $1 AND name ILIKE $2 LIMIT 1`,
-      [organizationId, searchName]
+      `SELECT id, name FROM parties WHERE organization_id = $1 AND ${ilikeConditions} LIMIT 1`,
+      queryParams
     );
 
     if (partyResult.rows.length > 0) {
@@ -73,8 +79,8 @@ export class LedgerService {
 
     // Try finding in workers
     const workerResult = await pool.query(
-      `SELECT id, name FROM workers WHERE organization_id = $1 AND name ILIKE $2 LIMIT 1`,
-      [organizationId, searchName]
+      `SELECT id, name FROM workers WHERE organization_id = $1 AND ${ilikeConditions} LIMIT 1`,
+      queryParams
     );
 
     if (workerResult.rows.length > 0) {
