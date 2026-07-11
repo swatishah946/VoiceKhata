@@ -114,7 +114,8 @@ export default function DashboardOverview() {
                   
                   <div className="text-right">
                     <p className={`font-bold ${tx.transaction_type === 'dispatch' ? 'text-white' : 'text-emerald-400'}`}>
-                      {tx.transaction_type === 'dispatch' ? '+' : '-'}{formatCurrency(tx.total_amount || tx.advance_paid)}
+                      {tx.transaction_type === 'dispatch' ? '+' : '-'}
+                      {formatCurrency(tx.transaction_type === 'dispatch' ? tx.total_amount : tx.advance_paid)}
                     </p>
                     <span className={`inline-flex mt-1 text-xs px-2 py-0.5 rounded-full border ${
                       tx.status === 'confirmed' 
