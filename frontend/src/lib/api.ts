@@ -24,8 +24,10 @@ export async function fetchApi(endpoint: string, options: RequestInit = {}) {
     headers
   });
 
-  if (response.status === 401) {
-    // Clear token and redirect to login if unauthorized
+  // Expired/invalid session → back to login. Not for the login call itself:
+  // a wrong password also returns 401, and redirecting there reloaded the page
+  // so the "Invalid password" message was never shown.
+  if (response.status === 401 && !endpoint.startsWith('/auth/')) {
     if (typeof window !== 'undefined') {
       localStorage.removeItem('voicekhata_token');
       window.location.href = '/login';
