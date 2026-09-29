@@ -10,7 +10,8 @@
     "strict": true,
     "skipLibCheck": true,
     "resolveJsonModule": true,
-    "noEmit": true
+    "noEmit": true,
+    "rootDir": "."
   },
   "include": ["src/**/*", "scripts/**/*", "tests/**/*", "eval/**/*", "vitest.config.mts"]
 }
