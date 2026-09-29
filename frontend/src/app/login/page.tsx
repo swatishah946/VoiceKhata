@@ -22,6 +22,9 @@ export default function LoginPage() {
         body: JSON.stringify({ password })
       });
 
+      if (res.status === 429) {
+        throw new Error('Too many attempts. Please wait 15 minutes and try again.');
+      }
       if (!res.ok) {
         throw new Error('Invalid password');
       }

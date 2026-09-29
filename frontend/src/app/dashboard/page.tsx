@@ -4,6 +4,21 @@ import { useEffect, useState } from 'react';
 import { fetchApi } from '@/lib/api';
 import { Wallet, TrendingUp, ArrowUpRight, ArrowDownRight, Activity } from 'lucide-react';
 
+// Cancelled and undone entries used to show as "Pending WhatsApp"
+const STATUS_BADGES: Record<string, { label: string; className: string }> = {
+  confirmed: { label: 'Confirmed', className: 'border-emerald-500/20 bg-emerald-500/10 text-emerald-400' },
+  pending_confirmation: { label: 'Pending WhatsApp', className: 'border-amber-500/20 bg-amber-500/10 text-amber-400' },
+  cancelled: { label: 'Cancelled', className: 'border-slate-500/20 bg-slate-500/10 text-slate-400 line-through' },
+  reversed: { label: 'Undone', className: 'border-rose-500/20 bg-rose-500/10 text-rose-400 line-through' },
+};
+
+const TYPE_LABELS: Record<string, string> = {
+  dispatch: 'Dispatch to',
+  payment: 'Payment from',
+  worker_advance: 'Advance to',
+  freight_payment: 'Freight paid to',
+};
+
 export default function DashboardOverview() {
   const [analytics, setAnalytics] = useState({ totalMarketDue: 0, monthlySales: 0 });
   const [transactions, setTransactions] = useState<any[]>([]);
@@ -103,8 +118,7 @@ export default function DashboardOverview() {
                 <div key={tx.id} className="p-4 sm:px-6 hover:bg-slate-800/50 transition-colors flex items-center justify-between">
                   <div>
                     <p className="text-white font-medium">
-                      {tx.transaction_type === 'dispatch' ? 'Dispatch to' : 
-                       tx.transaction_type === 'payment' ? 'Payment from' : 'Advance to'}{' '}
+                      {TYPE_LABELS[tx.transaction_type] ?? 'Entry for'}{' '}
                       <span className="text-blue-400">{tx.party_name || tx.worker_name}</span>
                     </p>
                     <p className="text-sm text-slate-500 mt-1">
@@ -115,14 +129,12 @@ export default function DashboardOverview() {
                   <div className="text-right">
                     <p className={`font-bold ${tx.transaction_type === 'dispatch' ? 'text-white' : 'text-emerald-400'}`}>
                       {tx.transaction_type === 'dispatch' ? '+' : '-'}
-                      {formatCurrency(tx.transaction_type === 'dispatch' ? tx.total_amount : tx.advance_paid)}
+                      {formatCurrency(Number(tx.transaction_type === 'dispatch' ? tx.total_amount : tx.advance_paid))}
                     </p>
                     <span className={`inline-flex mt-1 text-xs px-2 py-0.5 rounded-full border ${
-                      tx.status === 'confirmed' 
-                        ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-400' 
-                        : 'border-amber-500/20 bg-amber-500/10 text-amber-400'
+                      (STATUS_BADGES[tx.status] ?? STATUS_BADGES.pending_confirmation).className
                     }`}>
-                      {tx.status === 'confirmed' ? 'Confirmed' : 'Pending WhatsApp'}
+                      {(STATUS_BADGES[tx.status] ?? STATUS_BADGES.pending_confirmation).label}
                     </span>
                   </div>
                 </div>
