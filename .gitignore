@@ -36,3 +36,6 @@ docker-compose.override.yml
 
 # VoiceKhata Specs
 VOICEKHATA_*.md
+
+# Local Redis snapshots
+dump.rdb

@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { fetchApi } from '@/lib/api';
+import { fetchApi, setAuthToken } from '@/lib/api';
 import { Lock, Mic, ArrowRight } from 'lucide-react';
 
 export default function LoginPage() {
@@ -22,15 +22,18 @@ export default function LoginPage() {
         body: JSON.stringify({ password })
       });
 
+      if (res.status === 429) {
+        throw new Error('Too many attempts. Please wait 15 minutes and try again.');
+      }
       if (!res.ok) {
         throw new Error('Invalid password');
       }
 
       const data = await res.json();
-      localStorage.setItem('voicekhata_token', data.token);
+      setAuthToken(data.token);
       router.push('/dashboard');
-    } catch (err: any) {
-      setError(err.message || 'Login failed');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Login failed');
     } finally {
       setLoading(false);
     }
