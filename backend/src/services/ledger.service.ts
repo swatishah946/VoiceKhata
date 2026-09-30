@@ -433,7 +433,11 @@ export async function confirmPending(orgId: string, phone: string, ref?: string)
     await applyToBalances(db, tx, 1);
     await db.query(
       `UPDATE transactions
-          SET status = 'confirmed', confirmed_at = CURRENT_TIMESTAMP, party_id = $2, worker_id = $3,
+          -- clock_timestamp() = the real moment of confirmation. CURRENT_TIMESTAMP is the
+          -- transaction START time, so a "yes" that waited on a lock got an EARLIER time than
+          -- the one it waited for, and "undo" then reversed the wrong entry (found by the
+          -- property-based test).
+          SET status = 'confirmed', confirmed_at = clock_timestamp() AT TIME ZONE 'UTC', party_id = $2, worker_id = $3,
               updated_at = CURRENT_TIMESTAMP
         WHERE id = $1`,
       [tx.id, tx.party_id, tx.worker_id]
@@ -472,7 +476,7 @@ export async function undoLastConfirmed(orgId: string, phone: string): Promise<A
       `SELECT * FROM transactions
         WHERE organization_id = $1 AND requested_by_phone = $2 AND status = 'confirmed'
           AND confirmed_at > NOW() AT TIME ZONE 'UTC' - make_interval(hours => $3)
-        ORDER BY confirmed_at DESC LIMIT 1 FOR UPDATE`,
+        ORDER BY confirmed_at DESC, id DESC LIMIT 1 FOR UPDATE`,
       [orgId, phone, UNDO_WINDOW_HOURS]
     );
     if (!found.rows.length) return { status: 'not_found' } as const;
