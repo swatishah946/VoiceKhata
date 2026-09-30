@@ -42,7 +42,7 @@ If anything required is missing, the service will **refuse to start** and the Re
 
 ## 5. Render build/start commands
 The backend is now compiled with `tsc` instead of running TypeScript directly:
-- **Build command:** `npm ci && npm run build`
+- **Build command:** `npm ci --include=dev && npm run build` (the `--include=dev` matters: with `NODE_ENV=production`, plain `npm ci` skips TypeScript and the build fails)
 - **Start command:** `npm start` (runs `node dist/index.js`)
 
 ## 6. Merge and verify
