@@ -129,7 +129,7 @@ The README claimed the price list was used; it wasn't. Now `createPending` looks
 
 ---
 
-## Part 5 — Tests (156)
+## Part 5 — Tests (round 1: 156; see Part 7 for the full 293)
 
 | File | What it proves |
 |---|---|
@@ -159,4 +159,94 @@ Example résumé bullets (fill the brackets with your own measurements):
 - Built a voice-first WhatsApp ledger (Node.js, BullMQ, PostgreSQL, Gemini, Whisper) used by a family stone-trading business; [N] entries recorded in [M] weeks.
 - Hardened webhook ingestion with Twilio signature verification, 3-layer idempotency and SSRF-safe media handling; [p95] ms acknowledgement at [X] req/s.
 - Designed an LLM-output validation layer (Zod + confidence gating + price-list checks) achieving [X]% intent accuracy on [N] real Hinglish messages.
-- Wrote 156 unit/integration tests (Vitest, Supertest, real Postgres) with [X]% coverage, CI-gated via GitHub Actions.
+- Built a 4-layer test suite (293 tests: unit, integration on real Postgres/Redis, property-based, Playwright E2E) with [X]% coverage gates in CI; property-based testing found a concurrency bug in the undo path.
+
+
+---
+
+# Round 2 — more testing, and features for daily use
+
+## Part 7 — Testing, layer by layer
+
+**Four layers, 293 tests.** Each layer catches a different kind of bug:
+
+| Layer | Count | Catches |
+|---|---|---|
+| Backend unit + integration | 237 | logic and SQL bugs, security holes (real Postgres + real Redis) |
+| Property-based (inside the above) | 5,000+ random sequences checked locally | bugs nobody thought to write a test for |
+| Frontend component | 40 | UI logic: buttons, errors, formatting |
+| End-to-end (Playwright) | 16 | everything wired together, in a real browser, desktop + mobile |
+
+### Property-based testing, and the bug it found
+`tests/integration/ledger.property.test.ts`. Instead of writing scenarios by hand, **fast-check** generates random sequences of real operations: new entries from two phones, "yes", "yes <ref>", "no", "undo", Twilio re-deliveries, and two "yes" at the same instant. They run against the real database. After every sequence it checks three **invariants** (things that must always be true):
+1. the stored balances equal a simple in-memory **model** of what they should be;
+2. the stored balances equal the sum of confirmed transactions (**reconciliation**);
+3. exactly the entries the model thinks are pending are pending.
+
+**It found a real bug** after about 1,000 random sequences, then automatically **shrank** it to 4 steps: two entries → two "yes" at the same time → "undo" reversed the *wrong* entry.
+
+**Why:** `confirmed_at` was set with PostgreSQL's `CURRENT_TIMESTAMP`, which is the time the **database transaction started**, not the moment of confirmation. The second "yes" waited for the first one's row lock, so it *started* earlier but *confirmed* later. "Undo the most recent confirmation" then sorted them the wrong way round.
+**Fix:** `clock_timestamp()` (the actual time of the statement). That exact sequence is now pinned as a permanent regression example.
+
+**Interview line:** "Example-based tests only check the cases you think of. I described the ledger's invariants and let fast-check search for counterexamples. It found a timestamp-ordering race in my undo logic that none of my hand-written tests had covered, and shrank it to a 4-step reproduction."
+
+Also `tests/unit/properties.test.ts`, run over 2,000 generated inputs each:
+- the bill subtotal equals an exact **BigInt** calculation;
+- paise ↔ rupees round-trips losslessly;
+- the validator never crashes on arbitrary JSON;
+- no non-Twilio URL is ever accepted.
+
+### Reconciliation tool
+`services/reconcile.service.ts` + `npm run reconcile`. Party/worker balances are running totals (a cache). This recomputes them from the confirmed transactions and reports any difference; `--fix` rebuilds them in one locked transaction and writes an audit entry. Run it after deploying against your real data. If the old code ever left a wrong balance, this finds it.
+
+### Queue tests on real Redis
+`tests/integration/queue.test.ts` runs the real BullMQ queue. It proves:
+- duplicate MessageSids run once;
+- messages are handled in arrival order;
+- a Gemini rate limit is retried and then succeeds;
+- after the last failed attempt the user gets a WhatsApp message;
+- errors that can never succeed are not retried.
+
+To make this testable, `queue.ts` became `createMessageQueue({...})` with everything injectable.
+
+### Config tests
+`tests/unit/config.test.ts` proves the server **refuses to start** with a missing or weak secret, including the exact old fallback values.
+
+### Frontend tests (none existed before)
+Vitest + React Testing Library, set up as the Next.js docs bundled with this version describe. The tests click buttons the way a user would (`userEvent`) and look elements up by role and label, like a screen reader does. Covered:
+- the login page, including the old "error was never shown" bug as a regression test;
+- the dashboard, the confirm/cancel panel and the khata page;
+- the auth guard, list pages, downloads and India-time formatting. The tests run with the computer's timezone set to UTC to prove dates still show in IST.
+
+### End-to-end tests
+`frontend/tests/e2e/dashboard.spec.ts` + `backend/scripts/e2e-server.ts`. Playwright starts the real backend on a throwaway `*_e2e_test` database seeded through the real ledger code, then builds and starts the real frontend. It clicks through, on a **desktop and a phone**:
+- login (right and wrong password);
+- the numbers on the overview;
+- confirming a pending entry;
+- opening a khata and downloading the real PDF;
+- the CSV export;
+- the worker page;
+- and that the API refuses requests without a token.
+
+The browser is set to New York time on purpose, to prove dates still show in India time.
+
+**It found a real accessibility bug:** the phone menu button was an icon with no name, so screen readers (and the test) couldn't identify it. It now has `aria-label` and `aria-expanded`.
+
+### Coverage gates
+CI fails if coverage drops below the thresholds. Current: backend ~97% lines, frontend ~93% lines. CI also runs Redis, lint, the frontend tests and the E2E suite.
+
+## Part 8 — Features for daily use
+
+### WhatsApp
+- **"hisab"** / "aaj ka hisab": today's dispatches, payments received, worker advances, pending count, total market due and the top 3 who owe. Answered straight from the database, **no AI call**, so it's instant and free.
+- **"Ramesh ka balance kitna hai"**: new `GET_BALANCE` intent. Replies with one line ("₹4,000 lena baaki hai, aakhri payment 29 Sep") instead of a whole PDF. Ambiguous names get "which one?".
+
+### Dashboard
+- **Waiting for confirmation** panel with **Confirm / Cancel** buttons. Uses the same row lock as WhatsApp "yes", and a test proves a click and a "yes" at the same moment apply once. The audit log records "dashboard" as who did it.
+- **Khata page** for every party and worker: balance, totals, last payment, every entry with status, and **Download Khata PDF**. List cards now link to it.
+- **Today** card, and **Export this month (CSV)** for the accountant. CSV cells that start with `= + - @` get an apostrophe so a name like `=HYPERLINK(...)` can't run as a formula in Excel (**CSV injection**).
+- Lint was failing on `main` too (5 errors); it's now clean and enforced in CI. That included two real React issues (setState inside effects).
+- Fonts come from the `geist` package, so the **build no longer downloads from Google Fonts** (it failed without internet). The page title is "VoiceKhata" instead of "Create Next App".
+
+### New API endpoints
+`POST /api/transactions/:id/confirm|cancel`, `GET /api/transactions?status=`, `GET /api/parties/:id`, `GET /api/workers/:id`, `…/khata.pdf`, `GET /api/summary/today`, `GET /api/export/transactions.csv?from=&to=`. Every id is validated (a malformed id is a clean 404, not a database error) and everything is scoped to the logged-in organisation (tested).

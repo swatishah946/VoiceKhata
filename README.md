@@ -80,6 +80,11 @@ graph TD
 - PDFs are generated in memory and served through **random 128-bit, 30-minute links** — never guessable file names.
 - Startup **fails fast** if secrets are missing or weak; dashboard password stored as a **bcrypt** hash; login **rate-limited**; JWT algorithm pinned; CORS restricted to known origins; phone numbers masked in logs.
 
+### Daily use
+- WhatsApp: **"hisab"** → today's summary (no AI call), **"Ramesh ka balance kitna hai"** → instant balance, **"undo"**, **"help"**.
+- Dashboard: confirm/cancel pending entries, a khata page per party/worker with PDF download, today's totals, CSV export for the accountant (protected against spreadsheet-formula injection).
+- `npm run reconcile` checks every balance against the transactions and can rebuild them.
+
 ### PDFs for real customers
 - PDFKit with an embedded Unicode font (renders **₹** correctly), IST dates, running balance, and automatic page breaks for long ledgers.
 
@@ -87,27 +92,33 @@ graph TD
 
 ## 🧪 Testing
 
+**293 automated tests** in four layers, all run by GitHub Actions on every push:
+
+| Layer | Tools | What it covers |
+|---|---|---|
+| Backend unit + integration (237) | Vitest, Supertest, **real PostgreSQL + Redis** | money math, AI-output validation, the ledger, WhatsApp flows, queue retries, webhook/API security |
+| **Property-based** | fast-check | thousands of random sequences of entries / "yes" / "no" / "undo" / retries / simultaneous confirms — balances must always equal the sum of confirmed transactions |
+| Frontend (40) | Vitest, React Testing Library | login, dashboard, confirm/cancel, khata page, downloads, auth guard |
+| End-to-end (16) | Playwright, desktop + mobile | real browser → Next.js → Express → Postgres |
+
+Coverage: ~97% of backend lines, ~93% of frontend lines, enforced by minimum thresholds in CI.
+
+The property-based test found a real bug no hand-written test had caught: when two confirmations overlapped, `undo` could reverse the wrong entry, because `confirmed_at` recorded when the database transaction *started* rather than when the entry was confirmed.
+
 ```bash
 cd backend
-npm test               # unit + integration tests (needs a local Postgres, see below)
-npm run test:coverage  # with coverage report
-npm run typecheck
+npm test                       # needs Postgres (TEST_DATABASE_URL); Redis optional (TEST_REDIS_URL)
+npm run test:coverage
+PROPERTY_RUNS=1000 npm test    # more random ledger sequences
+npm run reconcile              # check live balances against transactions (read-only)
+
+cd ../frontend
+npm test                       # component tests
+npm run test:e2e               # browser tests (starts backend + frontend itself)
 ```
 
-- **156 tests** (Vitest + Supertest) — money math, validation, parsing, SSRF allow-list, PDF links, Gemini/Groq clients (mocked HTTP), the full ledger against a **real PostgreSQL**, the WhatsApp conversation flow, and webhook/API security (forged signatures, replayed messages, unknown senders, brute-force lockout, forged JWTs, CORS, org isolation).
-- ~90 % line coverage of `backend/src`. CI runs typecheck, tests and build on every push.
-- Tests use only `TEST_DATABASE_URL` (the name must contain "test") and never load `.env`, so they cannot touch real data.
-
-**Load test** — webhook acknowledgement latency with real Postgres lookups:
-```bash
-npm run bench -- 2000 20      # requests, concurrency
-```
-
-**AI accuracy eval** — run the real extraction over a hand-labelled dataset:
-```bash
-npm run eval                  # uses eval/dataset.json (or the synthetic sample)
-```
-Prints intent accuracy, exact-match rate, per-field accuracy, how many wrong answers the validator caught, and p50/p95 latency.
+**Load test** (webhook acknowledgement latency): `npm run bench -- 2000 20`
+**AI accuracy eval** (hand-labelled messages): `npm run eval`
 
 ---
 

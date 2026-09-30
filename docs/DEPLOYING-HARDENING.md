@@ -14,6 +14,12 @@ npm run migrate
 It is safe to run more than once. It adds tables/columns/indexes and enables `pg_trgm`; it never drops or deletes anything.
 If it prints *"Duplicate whatsapp_message_id rows exist"*, the old code created duplicates on Twilio retries. Everything else still applies; look at those rows in the dashboard, cancel the extras, then re-run.
 
+## 2b. Check the existing balances
+```bash
+npm run reconcile          # read-only: are balances equal to the confirmed transactions?
+npm run reconcile -- --fix # only if it reports differences
+```
+
 ## 3. Register who may use the bot (IMPORTANT)
 The new version **ignores messages from unknown numbers**. Before deploying, register your father's WhatsApp number (and anyone else who should use it):
 ```bash
@@ -44,6 +50,7 @@ The backend is now compiled with `tsc` instead of running TypeScript directly:
 2. `https://<render-url>/health` → `{"status":"OK","db":"up"}`.
 3. From your father's phone send **help** → he should get the help message.
 4. Send a small test entry, reply **yes**, check the dashboard, then send **undo**.
+5. Send **hisab**. Open a party on the dashboard and download its khata PDF.
 
 ## Rolling back
 Revert the merge commit on GitHub (Render redeploys the old code) and set the Render build/start commands back to what they were. The database changes are additive, so the old code keeps working with the migrated database.
