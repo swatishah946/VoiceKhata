@@ -73,11 +73,12 @@ const testDefaults: Record<string, string> = {
   GEMINI_FALLBACK_MODEL: 'gemini-2.5-flash',
 };
 
-function load() {
+/** Validates an environment. Exported so the fail-fast rules can be unit tested. */
+export function loadConfig(env: NodeJS.ProcessEnv, testMode = false) {
   // Tests only ever use TEST_DATABASE_URL, so they can never touch real data.
-  const raw = isTest
-    ? { ...process.env, ...testDefaults, DATABASE_URL: process.env.TEST_DATABASE_URL || testDefaults.DATABASE_URL }
-    : process.env;
+  const raw = testMode
+    ? { ...env, ...testDefaults, DATABASE_URL: env.TEST_DATABASE_URL || testDefaults.DATABASE_URL }
+    : env;
   const parsed = schema.safeParse(raw);
 
   if (!parsed.success) {
@@ -107,9 +108,9 @@ function load() {
     publicBaseUrl,
     corsOrigins: cfg.CORS_ORIGINS.split(',').map((s) => s.trim()).filter(Boolean),
     isProduction: cfg.NODE_ENV === 'production',
-    isTest,
+    isTest: testMode,
   };
 }
 
-export const config = load();
+export const config = loadConfig(process.env, isTest);
 export type AppConfig = typeof config;
