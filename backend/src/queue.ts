@@ -2,84 +2,89 @@ import { Queue, Worker, Job } from 'bullmq';
 import IORedis from 'ioredis';
 import { config } from './config';
 import { maskPhone } from './lib/phone';
-import { handleIncomingMessage, IncomingMessageJob, defaultDeps } from './workers/handlers';
+import { handleIncomingMessage, IncomingMessageJob, defaultDeps, Deps } from './workers/handlers';
 import { MSG } from './workers/messages';
 
 /**
  * BullMQ queue + worker.
  *
- * Changes:
- *  - the job id is the Twilio MessageSid, so BullMQ itself drops duplicates;
- *  - rate limiting uses BullMQ's built-in limiter (max 12 jobs/min for Gemini's
- *    free tier) instead of a fixed 4-second sleep after every job;
- *  - when a job fails for the last time, the user gets a WhatsApp message
- *    instead of silence;
- *  - the connection is created lazily, so tests can import the app without Redis.
+ *  - job id = Twilio MessageSid, so BullMQ itself drops duplicates;
+ *  - BullMQ's limiter (12 jobs/min, Gemini free tier) instead of a fixed sleep;
+ *  - concurrency 1 keeps messages in arrival order ("yes" can't overtake its voice note);
+ *  - when a job fails for the last time, the user gets a WhatsApp message;
+ *  - everything is injectable (connection, queue name, deps, timings) so the
+ *    tests run the real queue against a real Redis with fake WhatsApp/AI.
  */
 
 export const QUEUE_NAME = 'process_whatsapp_message';
 export const JOB_ATTEMPTS = 5;
 
-let connection: IORedis | null = null;
-let queue: Queue | null = null;
-
-function getConnection() {
-  connection ??= config.REDIS_URL
-    ? new IORedis(config.REDIS_URL, { maxRetriesPerRequest: null })
+export function createRedisConnection(url = config.REDIS_URL): IORedis {
+  return url
+    ? new IORedis(url, { maxRetriesPerRequest: null })
     : new IORedis({ host: config.REDIS_HOST, port: config.REDIS_PORT, maxRetriesPerRequest: null });
-  return connection;
 }
 
-export function getQueue(): Queue {
-  queue ??= new Queue(QUEUE_NAME, {
-    connection: getConnection() as any,
+export interface MessageQueueOptions {
+  connection?: IORedis;
+  name?: string;
+  deps?: Deps;
+  attempts?: number;
+  backoffDelayMs?: number;
+  limiter?: { max: number; duration: number };
+  log?: (msg: string) => void;
+}
+
+export function createMessageQueue(opts: MessageQueueOptions = {}) {
+  const connection = opts.connection ?? createRedisConnection();
+  const name = opts.name ?? QUEUE_NAME;
+  const deps = opts.deps ?? defaultDeps;
+  const log = opts.log ?? console.log;
+
+  const queue = new Queue(name, {
+    connection: connection as any,
     defaultJobOptions: {
-      attempts: JOB_ATTEMPTS,
-      backoff: { type: 'exponential', delay: 5000 },
+      attempts: opts.attempts ?? JOB_ATTEMPTS,
+      backoff: { type: 'exponential', delay: opts.backoffDelayMs ?? 5000 },
       removeOnComplete: { age: 24 * 3600, count: 1000 },
       removeOnFail: { age: 7 * 24 * 3600 },
     },
   });
-  return queue;
-}
 
-export async function enqueueMessage(job: IncomingMessageJob): Promise<void> {
-  // BullMQ ids cannot contain ':'; MessageSids never do, but be safe
-  await getQueue().add('incoming_message', job, { jobId: job.messageSid.replace(/:/g, '_') });
-}
+  async function enqueue(job: IncomingMessageJob): Promise<void> {
+    // BullMQ ids cannot contain ':'; MessageSids never do, but be safe
+    await queue.add('incoming_message', job, { jobId: job.messageSid.replace(/:/g, '_') });
+  }
 
-export function startWorker() {
-  const worker = new Worker(
-    QUEUE_NAME,
-    async (job: Job<IncomingMessageJob>) => handleIncomingMessage(job.data),
-    {
-      connection: getConnection() as any,
-      // 1 = messages are handled strictly in arrival order, so a quick "yes"
-      // can never be processed before the voice note it is confirming.
+  function startWorker() {
+    const worker = new Worker(name, async (job: Job<IncomingMessageJob>) => handleIncomingMessage(job.data, deps), {
+      connection: connection as any,
       concurrency: 1,
-      limiter: { max: 12, duration: 60_000 },
-    }
-  );
+      limiter: opts.limiter ?? { max: 12, duration: 60_000 },
+    });
 
-  worker.on('completed', (job, outcome) => {
-    console.log(`🏁 job ${job.id} → ${outcome} (${maskPhone(job.data.phone)})`);
-  });
+    worker.on('completed', (job, outcome) => {
+      log(`🏁 job ${job.id} → ${outcome} (${maskPhone(job.data.phone)})`);
+    });
 
-  worker.on('failed', async (job, err) => {
-    if (!job) return;
-    const final = job.attemptsMade >= (job.opts.attempts ?? 1) || err.name === 'UnrecoverableError';
-    console.error(`🚨 job ${job.id} attempt ${job.attemptsMade} failed: ${err.message}${final ? ' (giving up)' : ''}`);
-    if (final) {
-      await defaultDeps.messenger.sendText(job.data.phone, MSG.failed).catch((e) => {
-        console.error('could not send failure notice:', e.message);
-      });
-    }
-  });
+    worker.on('failed', async (job, err) => {
+      if (!job) return;
+      const final = job.attemptsMade >= (job.opts.attempts ?? 1) || err.name === 'UnrecoverableError';
+      log(`🚨 job ${job.id} attempt ${job.attemptsMade} failed: ${err.message}${final ? ' (giving up)' : ''}`);
+      if (final) {
+        await deps.messenger.sendText(job.data.phone, MSG.failed).catch((e) => {
+          log(`could not send failure notice: ${e.message}`);
+        });
+      }
+    });
 
-  return worker;
-}
+    return worker;
+  }
 
-export async function closeQueue() {
-  await queue?.close();
-  await connection?.quit();
+  async function close() {
+    await queue.close();
+    if (!opts.connection) await connection.quit();
+  }
+
+  return { queue, enqueue, startWorker, close };
 }
