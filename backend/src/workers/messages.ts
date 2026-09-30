@@ -1,5 +1,7 @@
 import { formatINR } from '../lib/money';
 import type { PendingEntry } from '../services/ledger.service';
+import type { DailySummary, PersonBalance } from '../services/reports.service';
+import { formatDateIST } from '../lib/time';
 
 /**
  * Every WhatsApp reply text in one place, so wording is consistent and testable.
@@ -59,6 +61,35 @@ export function pendingSummary(e: PendingEntry): string {
   return lines.join('\n');
 }
 
+export function summaryText(s: DailySummary): string {
+  const lines = [
+    `📊 *Aaj ka hisab* (${formatDateIST(s.date + 'T12:00:00Z')})`,
+    '',
+    `🚚 Dispatch: ${s.dispatchCount} entry · ${formatINR(s.dispatchTotal)}`,
+    `💰 Payment aaya: ${s.paymentsCount} entry · ${formatINR(s.paymentsTotal)}`,
+  ];
+  if (s.advancesTotal) lines.push(`👷 Worker advance: ${formatINR(s.advancesTotal)}`);
+  if (s.pendingCount) lines.push(`⏳ Confirm baaki: ${s.pendingCount} entry`);
+  lines.push('', `📒 Market me kul baaki: *${formatINR(s.marketDue)}*`);
+  if (s.topDue.length) {
+    lines.push('Sabse zyada baaki:');
+    s.topDue.forEach((p, i) => lines.push(`${i + 1}. ${p.name} — ${formatINR(p.outstanding)}`));
+  }
+  return lines.join('\n');
+}
+
+export function balanceText(b: PersonBalance): string {
+  if (b.type === 'worker') {
+    return b.outstanding > 0
+      ? `👷 *${b.name}* par ${formatINR(b.outstanding)} advance baaki hai.`
+      : `👷 *${b.name}* par koi advance baaki nahi hai.`;
+  }
+  const last = b.lastPaymentDate ? `\nAakhri payment: ${formatDateIST(b.lastPaymentDate)}` : '';
+  if (b.outstanding > 0) return `📒 *${b.name}* se ${formatINR(b.outstanding)} lena baaki hai.${last}`;
+  if (b.outstanding < 0) return `📒 *${b.name}* ka ${formatINR(-b.outstanding)} advance jama hai (humein dena hai).${last}`;
+  return `📒 *${b.name}* ka hisab barabar hai (₹0 baaki).${last}`;
+}
+
 export const MSG = {
   confirmed: (e: PendingEntry) =>
     `✅ Confirmed! (Ref ${e.refCode}) Khata update ho gaya.` +
@@ -94,6 +125,8 @@ export const MSG = {
     '• "Ramesh se 50000 payment aaya"\n' +
     '• "Mohan ko 2000 advance diya"\n' +
     '• "2x1½ ka rate 32 kar do"\n' +
-    '• "price list bhejo" / "Ramesh ka khata bhejo"\n\n' +
-    '✅ *yes* = confirm   ❌ *no* = cancel   ↩️ *undo* = pichli entry hatao',
+    '• "price list bhejo" / "Ramesh ka khata bhejo"\n' +
+    '• "Ramesh ka balance kitna hai"\n\n' +
+    '✅ *yes* = confirm   ❌ *no* = cancel   ↩️ *undo* = pichli entry hatao\n' +
+    '📊 *hisab* = aaj ka summary',
 };

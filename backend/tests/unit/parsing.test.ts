@@ -85,3 +85,12 @@ describe('dates are shown in IST', () => {
     expect(formatDateIST('2026-03-14T19:30:00Z')).toBe('15 Mar 2026');
   });
 });
+
+describe('summary command', () => {
+  it.each(['hisab', 'Hisaab', 'aaj ka hisab', 'Aaj Ka Hisaab!', 'summary', 'हिसाब'])('"%s" asks for today\'s summary', (t) =>
+    expect(parseCommand(t)).toEqual({ kind: 'summary' })
+  );
+  it('"Ramesh ka hisab bhejo" is a khata request for the AI, not the summary', () => {
+    expect(parseCommand('Ramesh ka hisab bhejo')).toBeNull();
+  });
+});

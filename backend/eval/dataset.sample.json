@@ -13,5 +13,8 @@
   {"id": "s12", "input": "Munshi ka khata dikhao", "expected": {"intent": "GET_KHATA", "person_name": "Munshi"}},
   {"id": "s13", "input": "6x2 wala 48 se 50 kar do", "expected": {"intent": "UPDATE_PRICE", "updated_stone_type": "6x2", "updated_rate": 50}},
   {"id": "s14", "input": "rate list chahiye customer ko bhejni hai", "expected": {"intent": "GET_PDF"}},
-  {"id": "s15", "input": "Balaji Stone ko 2500 fut 2½x2 bheja 33 rupaye, packing 800 aur loading 1200", "expected": {"intent": "TRANSACTION", "transaction_type": "dispatch", "party_name": "Balaji Stone", "sqft_quantity": 2500, "unit_rate": 33, "packing_charge": 800, "loading_charge": 1200}}
+  {"id": "s15", "input": "Balaji Stone ko 2500 fut 2½x2 bheja 33 rupaye, packing 800 aur loading 1200", "expected": {"intent": "TRANSACTION", "transaction_type": "dispatch", "party_name": "Balaji Stone", "sqft_quantity": 2500, "unit_rate": 33, "packing_charge": 800, "loading_charge": 1200}},
+  {"id": "s16", "input": "Ramesh ka balance kitna hai", "expected": {"intent": "GET_BALANCE", "person_name": "Ramesh"}},
+  {"id": "s17", "input": "Gupta ji pe kitna baaki hai abhi", "expected": {"intent": "GET_BALANCE", "person_name": "Gupta"}},
+  {"id": "s18", "input": "Mahavir Marbles ka poora khata PDF bhejo", "expected": {"intent": "GET_KHATA", "person_name": "Mahavir Marbles"}}
 ]

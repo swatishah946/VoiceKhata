@@ -5,6 +5,9 @@ import rateLimit from 'express-rate-limit';
 import pool from '../db';
 import { config } from '../config';
 import { authMiddleware, signToken } from '../middleware/auth';
+import * as Ledger from '../services/ledger.service';
+import { generateKhataPdf } from '../services/pdf.service';
+import { dailySummary, transactionsCsv } from '../services/reports.service';
 
 const router = Router();
 
@@ -47,8 +50,24 @@ router.post('/auth/login', loginLimiter, async (req: Request, res: Response) => 
 // Everything below requires a valid token
 router.use(authMiddleware);
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const STATUSES = new Set(['pending_confirmation', 'confirmed', 'cancelled', 'reversed']);
+
+/** Validates :id so a malformed id is a clean 404 instead of a Postgres error. */
+function idParam(req: Request, res: Response): string | null {
+  const id = String(req.params.id);
+  if (!UUID_RE.test(id)) {
+    res.status(404).json({ error: 'Not found' });
+    return null;
+  }
+  return id;
+}
+
 router.get('/transactions', async (req: Request, res: Response) => {
   const limit = Math.min(Math.max(parseInt(String(req.query.limit || '50'), 10) || 50, 1), 200);
+  const status = req.query.status ? String(req.query.status) : null;
+  if (status && !STATUSES.has(status)) return res.status(400).json({ error: 'Invalid status' });
   const result = await pool.query(
     `SELECT t.id, t.transaction_type, t.status, t.stone_type_text, t.pieces_count, t.sqft_quantity,
             t.unit_rate, t.subtotal_amount, t.loading_charge, t.packing_charge, t.tax_percentage,
@@ -59,12 +78,48 @@ router.get('/transactions', async (req: Request, res: Response) => {
        FROM transactions t
        LEFT JOIN parties p ON t.party_id = p.id
        LEFT JOIN workers w ON t.worker_id = w.id
-      WHERE t.organization_id = $1
+      WHERE t.organization_id = $1 AND ($3::text IS NULL OR t.status = $3)
       ORDER BY t.created_at DESC
       LIMIT $2`,
-    [req.user!.orgId, limit]
+    [req.user!.orgId, limit, status]
   );
   res.json(result.rows);
+});
+
+/** Pending entry → Confirm / Cancel from the dashboard (same row lock as WhatsApp "yes"). */
+router.post('/transactions/:id/confirm', async (req: Request, res: Response) => {
+  const id = idParam(req, res);
+  if (!id) return;
+  const r = await Ledger.confirmById(req.user!.orgId, id);
+  if (r.status === 'not_found') return res.status(409).json({ error: 'Entry is not pending (already confirmed, cancelled, or not found)' });
+  res.json({ status: 'confirmed', id });
+});
+
+router.post('/transactions/:id/cancel', async (req: Request, res: Response) => {
+  const id = idParam(req, res);
+  if (!id) return;
+  const r = await Ledger.cancelById(req.user!.orgId, id);
+  if (r.status === 'not_found') return res.status(409).json({ error: 'Entry is not pending (already confirmed, cancelled, or not found)' });
+  res.json({ status: 'cancelled', id });
+});
+
+/** CSV for the accountant: /api/export/transactions.csv?from=2026-09-01&to=2026-09-30 (IST days, max 1 year). */
+router.get('/export/transactions.csv', async (req: Request, res: Response) => {
+  const from = String(req.query.from || '');
+  const to = String(req.query.to || '');
+  const fromD = new Date(from + 'T00:00:00Z');
+  const toD = new Date(to + 'T00:00:00Z');
+  if (!DATE_RE.test(from) || !DATE_RE.test(to) || isNaN(+fromD) || isNaN(+toD) || fromD > toD || +toD - +fromD > 366 * 86400_000) {
+    return res.status(400).json({ error: 'Use ?from=YYYY-MM-DD&to=YYYY-MM-DD (from ≤ to, at most one year)' });
+  }
+  const csv = await transactionsCsv(req.user!.orgId, from, to);
+  res.setHeader('Content-Disposition', `attachment; filename="voicekhata_${from}_to_${to}.csv"`);
+  res.setHeader('Cache-Control', 'no-store');
+  res.type('text/csv; charset=utf-8').send(csv);
+});
+
+router.get('/summary/today', async (req: Request, res: Response) => {
+  res.json(await dailySummary(req.user!.orgId));
 });
 
 router.get('/parties', async (req: Request, res: Response) => {
@@ -119,5 +174,49 @@ router.get('/workers', async (req: Request, res: Response) => {
   );
   res.json(result.rows);
 });
+
+/** One party or worker: balance + every entry (for the detail page). */
+async function personDetail(req: Request, res: Response, type: 'party' | 'worker') {
+  const id = idParam(req, res);
+  if (!id) return;
+  const orgId = req.user!.orgId;
+  const person = await pool.query(
+    type === 'party'
+      ? `SELECT p.id, p.name, p.type, p.phone, b.total_billed, b.total_paid, b.outstanding_balance, b.last_payment_date
+           FROM parties p LEFT JOIN party_balances b ON b.party_id = p.id WHERE p.id = $1 AND p.organization_id = $2`
+      : `SELECT w.id, w.name, 'worker' AS type, w.phone, l.advances_taken, l.net_due
+           FROM workers w LEFT JOIN worker_ledger l ON l.worker_id = w.id WHERE w.id = $1 AND w.organization_id = $2`,
+    [id, orgId]
+  );
+  if (!person.rows.length) return res.status(404).json({ error: 'Not found' });
+  const column = type === 'party' ? 'party_id' : 'worker_id';
+  const tx = await pool.query(
+    `SELECT id, transaction_type, status, stone_type_text, pieces_count, sqft_quantity, unit_rate, subtotal_amount,
+            loading_charge, packing_charge, tax_percentage, tax_amount, freight_charge, total_amount, advance_paid,
+            ref_code, created_at, confirmed_at
+       FROM transactions WHERE organization_id = $1 AND ${column} = $2
+      ORDER BY created_at DESC LIMIT 500`,
+    [orgId, id]
+  );
+  res.json({ ...person.rows[0], transactions: tx.rows });
+}
+
+async function personKhataPdf(req: Request, res: Response, type: 'party' | 'worker') {
+  const id = idParam(req, res);
+  if (!id) return;
+  const table = type === 'party' ? 'parties' : 'workers';
+  const person = await pool.query(`SELECT id, name FROM ${table} WHERE id = $1 AND organization_id = $2`, [id, req.user!.orgId]);
+  if (!person.rows.length) return res.status(404).json({ error: 'Not found' });
+  const pdf = await generateKhataPdf(req.user!.orgId, { id, type, name: person.rows[0].name });
+  const safeName = person.rows[0].name.replace(/[^A-Za-z0-9]+/g, '_').slice(0, 60) || 'khata';
+  res.setHeader('Content-Disposition', `attachment; filename="Khata_${safeName}.pdf"`);
+  res.setHeader('Cache-Control', 'no-store');
+  res.type('application/pdf').send(pdf);
+}
+
+router.get('/parties/:id', (req, res) => personDetail(req, res, 'party'));
+router.get('/parties/:id/khata.pdf', (req, res) => personKhataPdf(req, res, 'party'));
+router.get('/workers/:id', (req, res) => personDetail(req, res, 'worker'));
+router.get('/workers/:id/khata.pdf', (req, res) => personKhataPdf(req, res, 'worker'));
 
 export default router;

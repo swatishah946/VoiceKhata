@@ -358,7 +358,7 @@ async function audit(
   await db.query(
     `INSERT INTO audit_logs (organization_id, action, entity_type, entity_id, old_values, new_values, user_agent)
      VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-    [orgId, action, entityType, entityId, JSON.stringify(oldValues ?? null), JSON.stringify(newValues ?? null), `whatsapp:${actor}`]
+    [orgId, action, entityType, entityId, JSON.stringify(oldValues ?? null), JSON.stringify(newValues ?? null), actor]
   );
 }
 
@@ -402,6 +402,48 @@ export type ActionResult =
   | { status: 'done'; entry: PendingEntry }
   | { status: 'not_found' };
 
+/** Shared by WhatsApp "yes" and the dashboard's Confirm button. `tx` must be locked FOR UPDATE. */
+async function applyConfirm(db: Queryable, orgId: string, tx: any, actor: string) {
+  const x = tx.ai_extracted_json || {};
+
+  // Create the party/worker now (not at pending time) if it is new
+  if (!tx.party_id && !tx.worker_id) {
+    if (tx.transaction_type === 'worker_advance' && x.worker_name) {
+      tx.worker_id = await ensureWorker(db, orgId, x.worker_name);
+    } else if (tx.transaction_type === 'freight_payment') {
+      const name = x.transporter_name || x.party_name || x.worker_name;
+      if (name) tx.party_id = await ensureParty(db, orgId, name, 'transporter');
+    } else if (x.party_name) {
+      tx.party_id = await ensureParty(db, orgId, x.party_name, 'customer');
+    }
+  }
+
+  await applyToBalances(db, tx, 1);
+  await db.query(
+    `UPDATE transactions
+        -- clock_timestamp() = the real moment of confirmation. CURRENT_TIMESTAMP is the
+        -- transaction START time, so a "yes" that waited on a lock got an EARLIER time than
+        -- the one it waited for, and "undo" then reversed the wrong entry (found by the
+        -- property-based test).
+        SET status = 'confirmed', confirmed_at = clock_timestamp() AT TIME ZONE 'UTC', party_id = $2, worker_id = $3,
+            updated_at = CURRENT_TIMESTAMP
+      WHERE id = $1`,
+    [tx.id, tx.party_id, tx.worker_id]
+  );
+  await audit(db, orgId, 'transaction.confirm', 'transaction', tx.id, { status: 'pending_confirmation' }, { status: 'confirmed' }, actor);
+}
+
+async function markCancelled(db: Queryable, orgId: string, id: string, actor: string) {
+  await db.query(`UPDATE transactions SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP WHERE id = $1`, [id]);
+  await audit(db, orgId, 'transaction.cancel', 'transaction', id, { status: 'pending_confirmation' }, { status: 'cancelled' }, actor);
+}
+
+async function loadEntry(db: Queryable, id: string, otherPending: number) {
+  const row = (await db.query(`${SELECT_TX} WHERE t.id = $1`, [id])).rows[0];
+  return toEntry(row, otherPending, false);
+}
+
+/** WhatsApp "yes" / "yes <ref>": the sender's own newest pending entry (max 24 h old). */
 export async function confirmPending(orgId: string, phone: string, ref?: string): Promise<ActionResult> {
   return withTransaction(async (db) => {
     const found = await db.query(
@@ -416,56 +458,52 @@ export async function confirmPending(orgId: string, phone: string, ref?: string)
     );
     if (!found.rows.length) return { status: 'not_found' } as const;
     const tx = found.rows[0];
-    const x = tx.ai_extracted_json || {};
-
-    // Create the party/worker now (not at pending time) if it is new
-    if (!tx.party_id && !tx.worker_id) {
-      if (tx.transaction_type === 'worker_advance' && x.worker_name) {
-        tx.worker_id = await ensureWorker(db, orgId, x.worker_name);
-      } else if (tx.transaction_type === 'freight_payment') {
-        const name = x.transporter_name || x.party_name || x.worker_name;
-        if (name) tx.party_id = await ensureParty(db, orgId, name, 'transporter');
-      } else if (x.party_name) {
-        tx.party_id = await ensureParty(db, orgId, x.party_name, 'customer');
-      }
-    }
-
-    await applyToBalances(db, tx, 1);
-    await db.query(
-      `UPDATE transactions
-          -- clock_timestamp() = the real moment of confirmation. CURRENT_TIMESTAMP is the
-          -- transaction START time, so a "yes" that waited on a lock got an EARLIER time than
-          -- the one it waited for, and "undo" then reversed the wrong entry (found by the
-          -- property-based test).
-          SET status = 'confirmed', confirmed_at = clock_timestamp() AT TIME ZONE 'UTC', party_id = $2, worker_id = $3,
-              updated_at = CURRENT_TIMESTAMP
-        WHERE id = $1`,
-      [tx.id, tx.party_id, tx.worker_id]
-    );
-    await audit(db, orgId, 'transaction.confirm', 'transaction', tx.id, { status: 'pending_confirmation' }, { status: 'confirmed' }, phone);
-
-    const row = (await db.query(`${SELECT_TX} WHERE t.id = $1`, [tx.id])).rows[0];
-    return { status: 'done', entry: toEntry(row, await countOtherPending(db, orgId, phone, tx.id), false) } as const;
+    await applyConfirm(db, orgId, tx, `whatsapp:${phone}`);
+    return { status: 'done', entry: await loadEntry(db, tx.id, await countOtherPending(db, orgId, phone, tx.id)) } as const;
   });
 }
 
 export async function cancelPending(orgId: string, phone: string, ref?: string): Promise<ActionResult> {
   return withTransaction(async (db) => {
-    const res = await db.query(
-      `UPDATE transactions SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP
-        WHERE id = (
-          SELECT id FROM transactions
-           WHERE organization_id = $1 AND requested_by_phone = $2 AND status = 'pending_confirmation'
-             AND ($3::text IS NULL OR ref_code = $3)
-           ORDER BY created_at DESC LIMIT 1 FOR UPDATE)
-        RETURNING id`,
+    const found = await db.query(
+      `SELECT id FROM transactions
+        WHERE organization_id = $1 AND requested_by_phone = $2 AND status = 'pending_confirmation'
+          AND ($3::text IS NULL OR ref_code = $3)
+        ORDER BY created_at DESC LIMIT 1 FOR UPDATE`,
       [orgId, phone, ref ?? null]
     );
-    if (!res.rows.length) return { status: 'not_found' } as const;
-    const id = res.rows[0].id;
-    await audit(db, orgId, 'transaction.cancel', 'transaction', id, { status: 'pending_confirmation' }, { status: 'cancelled' }, phone);
-    const row = (await db.query(`${SELECT_TX} WHERE t.id = $1`, [id])).rows[0];
-    return { status: 'done', entry: toEntry(row, 0, false) } as const;
+    if (!found.rows.length) return { status: 'not_found' } as const;
+    await markCancelled(db, orgId, found.rows[0].id, `whatsapp:${phone}`);
+    return { status: 'done', entry: await loadEntry(db, found.rows[0].id, 0) } as const;
+  });
+}
+
+/**
+ * Dashboard Confirm / Cancel buttons: act on one entry by id. Uses the same row
+ * lock as WhatsApp, so a button click and a "yes" at the same moment can never
+ * apply an entry twice. Scoped to the organisation (no cross-tenant access).
+ */
+export async function confirmById(orgId: string, id: string, actor = 'dashboard'): Promise<ActionResult> {
+  return withTransaction(async (db) => {
+    const found = await db.query(
+      `SELECT * FROM transactions WHERE id = $1 AND organization_id = $2 AND status = 'pending_confirmation' FOR UPDATE`,
+      [id, orgId]
+    );
+    if (!found.rows.length) return { status: 'not_found' } as const;
+    await applyConfirm(db, orgId, found.rows[0], actor);
+    return { status: 'done', entry: await loadEntry(db, id, 0) } as const;
+  });
+}
+
+export async function cancelById(orgId: string, id: string, actor = 'dashboard'): Promise<ActionResult> {
+  return withTransaction(async (db) => {
+    const found = await db.query(
+      `SELECT id FROM transactions WHERE id = $1 AND organization_id = $2 AND status = 'pending_confirmation' FOR UPDATE`,
+      [id, orgId]
+    );
+    if (!found.rows.length) return { status: 'not_found' } as const;
+    await markCancelled(db, orgId, id, actor);
+    return { status: 'done', entry: await loadEntry(db, id, 0) } as const;
   });
 }
 
@@ -483,7 +521,7 @@ export async function undoLastConfirmed(orgId: string, phone: string): Promise<A
     const tx = found.rows[0];
     await applyToBalances(db, tx, -1);
     await db.query(`UPDATE transactions SET status = 'reversed', updated_at = CURRENT_TIMESTAMP WHERE id = $1`, [tx.id]);
-    await audit(db, orgId, 'transaction.undo', 'transaction', tx.id, { status: 'confirmed' }, { status: 'reversed' }, phone);
+    await audit(db, orgId, 'transaction.undo', 'transaction', tx.id, { status: 'confirmed' }, { status: 'reversed' }, `whatsapp:${phone}`);
     const row = (await db.query(`${SELECT_TX} WHERE t.id = $1`, [tx.id])).rows[0];
     return { status: 'done', entry: toEntry(row, 0, false) } as const;
   });
@@ -529,7 +567,7 @@ export async function updateStonePrice(orgId: string, phone: string, stoneType: 
        VALUES ($1, $2, $3, $4, 'WhatsApp update', CURRENT_DATE)`,
       [id, orgId, oldPrice, newPrice]
     );
-    await audit(db, orgId, 'price.update', 'stone_type', id, { price: oldPrice }, { price: Number(newPrice) }, phone);
+    await audit(db, orgId, 'price.update', 'stone_type', id, { price: oldPrice }, { price: Number(newPrice) }, `whatsapp:${phone}`);
     return { name, oldPrice, newPrice: Number(newPrice), isNew: !match };
   });
 }

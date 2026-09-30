@@ -7,7 +7,7 @@
  * e.g. "yes K7Q2" confirms that specific entry.
  */
 
-export type CommandKind = 'confirm' | 'cancel' | 'undo' | 'help';
+export type CommandKind = 'confirm' | 'cancel' | 'undo' | 'help' | 'summary';
 
 export interface ParsedCommand {
   kind: CommandKind;
@@ -25,6 +25,8 @@ const CANCEL = [
 ];
 const UNDO = ['undo', 'wapas', 'wapaslo', 'reverse', 'hatao', 'deletelast'];
 const HELP = ['help', 'madad', 'menu', '?'];
+// Today's summary, answered from the database without an AI call
+const SUMMARY = ['hisab', 'hisaab', 'aajkahisab', 'aajkahisaab', 'summary', 'report', 'aajkareport', 'totals', 'हिसाब', 'आजकाहिसाब'];
 
 // Same alphabet as generateRefCode (no 0/O/1/I)
 const REF_RE = /^[A-HJ-NP-Z2-9]{4}$/;
@@ -41,6 +43,7 @@ function classify(key: string): CommandKind | null {
   if (CANCEL.includes(key)) return 'cancel';
   if (UNDO.includes(key)) return 'undo';
   if (HELP.includes(key)) return 'help';
+  if (SUMMARY.includes(key)) return 'summary';
   return null;
 }
 
