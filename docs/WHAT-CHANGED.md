@@ -151,7 +151,7 @@ A good habit I followed: **break the code on purpose and check a test fails**. T
 Only put numbers on your résumé that **you** measured on **your** setup:
 
 1. **Tests & coverage:** `npm run test:coverage` → test count and the "All files" line %.
-2. **Webhook latency:** `npm run bench -- 2000 20` → p50/p95 ack time and requests/sec. (Measured in my sandbox: 2,000 signed requests, 0 failures, p95 ≈ 71 ms, ~460 req/s. Your laptop will differ — run it yourself.)
+2. **Webhook latency:** `npm run bench -- 2000 20` → p50/p95 ack time and requests/sec. (Latest sandbox measurement, median of 3 runs: p50 ≈ 28 ms, p95 ≈ 50 ms, ~640 req/s, 0 errors. Your laptop will differ, so run it yourself.) **Duplicates:** `npm run bench -- 3000 30 3` replays every message 3 times at once; it must show `duplicatesQueued: 0` (measured: 1,000 unique of 3,000 deliveries, 0 duplicates).
 3. **AI accuracy:** collect 50–100 of your father's real voice notes/messages → put the transcripts and the correct answers in `backend/eval/dataset.json` (same format as `dataset.sample.json`) → `npm run eval`. Reports intent accuracy, exact-match %, per-field accuracy and how many wrong answers the validator caught. **Don't quote results from the synthetic sample.**
 4. **Real usage:** once your father uses it, `SELECT status, COUNT(*) FROM transactions GROUP BY status;` gives entries confirmed vs cancelled — a real "N entries recorded over M weeks" line.
 
