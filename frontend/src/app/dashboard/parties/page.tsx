@@ -1,11 +1,21 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { fetchApi } from '@/lib/api';
+import { formatCurrency } from '@/lib/format';
 import { Users, Search, Building2, HardHat, TrendingUp } from 'lucide-react';
 
+interface Party {
+  id: string;
+  name: string;
+  company_name?: string | null;
+  type: string;
+  outstanding_balance: string | number | null;
+}
+
 export default function PartiesPage() {
-  const [parties, setParties] = useState<any[]>([]);
+  const [parties, setParties] = useState<Party[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
 
@@ -24,10 +34,6 @@ export default function PartiesPage() {
     }
     loadParties();
   }, []);
-
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(amount || 0);
-  };
 
   const filteredParties = parties.filter(p => 
     p.name?.toLowerCase().includes(searchTerm.toLowerCase()) || 
@@ -74,7 +80,7 @@ export default function PartiesPage() {
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {filteredParties.map((party) => (
-            <div key={party.id} className="bg-slate-900 border border-slate-800 rounded-2xl p-5 hover:border-slate-700 transition-all group">
+            <Link key={party.id} href={`/dashboard/parties/${party.id}`} className="block bg-slate-900 border border-slate-800 rounded-2xl p-5 hover:border-slate-700 transition-all group">
               <div className="flex items-start justify-between">
                 <div className="flex items-center gap-3">
                   <div className={`p-2 rounded-lg ${party.type === 'customer' ? 'bg-blue-500/10 text-blue-400' : 'bg-purple-500/10 text-purple-400'}`}>
@@ -98,7 +104,7 @@ export default function PartiesPage() {
                   )}
                 </div>
               </div>
-            </div>
+            </Link>
           ))}
         </div>
       )}
