@@ -79,9 +79,11 @@ export async function handleIncomingMessage(job: IncomingMessageJob, deps: Deps 
 
   // 2. Understand the message with AI
   let raw: unknown;
+  let sourceText: string | undefined; // what the bot understood, saved with the entry
   try {
     if (job.kind === 'text') {
-      raw = await deps.extractFromText(job.text || '');
+      sourceText = job.text || '';
+      raw = await deps.extractFromText(sourceText);
     } else if (job.kind === 'audio') {
       const media = await deps.downloadMedia(job.mediaUrl!);
       const transcript = await deps.transcribeAudio(media.buffer, media.mimeType);
@@ -90,9 +92,11 @@ export async function handleIncomingMessage(job: IncomingMessageJob, deps: Deps 
         await reply(MSG.lowConfidence);
         return 'rejected_low_confidence';
       }
+      sourceText = transcript;
       raw = await deps.extractFromText(transcript);
     } else if (job.kind === 'image') {
       const media = await deps.downloadMedia(job.mediaUrl!);
+      sourceText = '[photo of a bill]';
       raw = await deps.extractFromImage(media.buffer, media.mimeType);
     } else {
       await reply(MSG.unsupportedMedia);
@@ -126,7 +130,7 @@ export async function handleIncomingMessage(job: IncomingMessageJob, deps: Deps 
   // 4. Act on the intent
   switch (data.intent) {
     case 'TRANSACTION': {
-      const entry = await deps.ledger.createPending(org, phone, messageSid, data);
+      const entry = await deps.ledger.createPending(org, phone, messageSid, data, sourceText);
       await reply(pendingSummary(entry));
       return 'pending_created';
     }

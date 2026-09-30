@@ -242,7 +242,9 @@ export async function createPending(
   orgId: string,
   phone: string,
   messageId: string,
-  data: Extraction
+  data: Extraction,
+  /** The words the bot understood (typed text or voice transcript), kept for audits and the accuracy eval */
+  sourceText?: string
 ): Promise<PendingEntry> {
   // Idempotency: same WhatsApp message → same entry, never a second one
   const existing = await pool.query(`${SELECT_TX} WHERE t.whatsapp_message_id = $1`, [messageId]);
@@ -312,9 +314,9 @@ export async function createPending(
          freight_charge, loading_charge, packing_charge, tax_percentage, tax_amount,
          total_amount, advance_paid, outstanding_balance,
          status, needs_price_confirmation, price_warning, ai_extracted_json,
-         whatsapp_message_id, requested_by_phone, ref_code
+         whatsapp_message_id, requested_by_phone, ref_code, transcription_text
        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,
-                 'pending_confirmation',$22,$23,$24,$25,$26,$27)`,
+                 'pending_confirmation',$22,$23,$24,$25,$26,$27,$28)`,
       [
         id, orgId, partyId, workerId, type,
         master?.id ?? null, data.stone_type ?? null, data.pieces_count ?? null,
@@ -326,12 +328,12 @@ export async function createPending(
         toRupeeString(toPaise(data.packing_charge)), data.tax_percentage ?? 0, toRupeeString(tax),
         toRupeeString(total), toRupeeString(amount), toRupeeString(outstanding),
         Boolean(counterparty?.isNew || priceWarning), priceWarning ? JSON.stringify(priceWarning) : null,
-        JSON.stringify(data), messageId, phone, refCode,
+        JSON.stringify(data), messageId, phone, refCode, sourceText?.slice(0, 2000) ?? null,
       ]
     );
   } catch (err: any) {
     // Unique index hit: a concurrent retry already inserted this message
-    if (err.code === '23505') return createPending(orgId, phone, messageId, data);
+    if (err.code === '23505') return createPending(orgId, phone, messageId, data, sourceText);
     throw err;
   }
 

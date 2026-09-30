@@ -55,6 +55,10 @@ describe('WhatsApp conversation flow', () => {
     expect(await handleIncomingMessage(text('Haan ji'), deps)).toBe('confirmed');
     expect(sent[1]).toContain('✅ Confirmed');
     expect(await partyBalance('Siddhi Stone')).toMatchObject({ outstanding: 159000 });
+
+    // the transcript is saved with the entry (used to build the real-message accuracy eval)
+    const saved = await pool.query(`SELECT transcription_text FROM transactions`);
+    expect(saved.rows[0].transcription_text).toBe('Siddhi Stone ko 5000 sqft bheja');
   });
 
   it('"no" cancels and "undo" reverses', async () => {
