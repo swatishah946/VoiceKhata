@@ -18,7 +18,8 @@
     "simulate": "ts-node --transpile-only scripts/simulate-webhook.ts",
     "eval": "ts-node --transpile-only eval/run-eval.ts",
     "bench": "ts-node --transpile-only scripts/bench-webhook.ts",
-    "reconcile": "ts-node --transpile-only scripts/reconcile.ts"
+    "reconcile": "ts-node --transpile-only scripts/reconcile.ts",
+    "e2e:server": "ts-node --transpile-only scripts/e2e-server.ts"
   },
   "keywords": [],
   "author": "",
