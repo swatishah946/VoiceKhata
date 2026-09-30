@@ -7,9 +7,10 @@ import { AiError, extractFromImage, extractFromText } from '../services/ai.servi
 import * as Ledger from '../services/ledger.service';
 import { downloadTwilioMedia, MediaError } from '../services/media.service';
 import * as Pdf from '../services/pdf.service';
+import * as Reports from '../services/reports.service';
 import { transcribeAudio } from '../services/whisper.service';
 import { WhatsAppService } from '../services/whatsapp.service';
-import { MSG, pendingSummary } from './messages';
+import { MSG, balanceText, pendingSummary, summaryText } from './messages';
 
 /**
  * What the webhook puts on the queue. The sender has ALREADY been verified
@@ -34,6 +35,7 @@ export const defaultDeps = {
   downloadMedia: downloadTwilioMedia,
   ledger: Ledger,
   pdf: Pdf,
+  reports: Reports,
 };
 export type Deps = typeof defaultDeps;
 
@@ -41,7 +43,7 @@ export type HandlerOutcome =
   | 'confirmed' | 'cancelled' | 'undone' | 'nothing_pending' | 'help'
   | 'pending_created' | 'price_updated' | 'price_list_sent' | 'khata_sent'
   | 'khata_not_found' | 'khata_ambiguous' | 'rejected_missing' | 'rejected_low_confidence'
-  | 'not_understood' | 'unsupported';
+  | 'not_understood' | 'unsupported' | 'summary_sent' | 'balance_sent' | 'balance_ambiguous' | 'balance_not_found';
 
 export async function handleIncomingMessage(job: IncomingMessageJob, deps: Deps = defaultDeps): Promise<HandlerOutcome> {
   const { phone, organizationId: org, messageSid } = job;
@@ -68,6 +70,10 @@ export async function handleIncomingMessage(job: IncomingMessageJob, deps: Deps 
     if (cmd?.kind === 'help') {
       await reply(MSG.help);
       return 'help';
+    }
+    if (cmd?.kind === 'summary') {
+      await reply(summaryText(await deps.reports.dailySummary(org)));
+      return 'summary_sent';
     }
   }
 
@@ -132,6 +138,20 @@ export async function handleIncomingMessage(job: IncomingMessageJob, deps: Deps 
     case 'GET_PDF': {
       await deps.messenger.sendPdf(phone, await deps.pdf.generatePricingPdf(org), MSG.priceList);
       return 'price_list_sent';
+    }
+    case 'GET_BALANCE': {
+      const candidates = await deps.ledger.findPeople(org, data.person_name!);
+      const person = deps.ledger.pickPerson(candidates);
+      if (!person) {
+        if (candidates.length) {
+          await reply(MSG.khataWhichOne(data.person_name!, candidates.map((c) => c.name)));
+          return 'balance_ambiguous';
+        }
+        await reply(MSG.khataNotFound(data.person_name!));
+        return 'balance_not_found';
+      }
+      await reply(balanceText(await deps.reports.personBalance(org, person)));
+      return 'balance_sent';
     }
     case 'GET_KHATA': {
       const candidates = await deps.ledger.findPeople(org, data.person_name!);

@@ -35,7 +35,7 @@ function nameish() {
   }, z.string().optional());
 }
 
-export const IntentSchema = z.enum(['TRANSACTION', 'UPDATE_PRICE', 'GET_PDF', 'GET_KHATA']);
+export const IntentSchema = z.enum(['TRANSACTION', 'UPDATE_PRICE', 'GET_PDF', 'GET_KHATA', 'GET_BALANCE']);
 export const TransactionTypeSchema = z.enum(['dispatch', 'payment', 'worker_advance', 'freight_payment']);
 
 export const ExtractionSchema = z.object({
@@ -96,7 +96,7 @@ export function missingEssentials(d: Extraction): string[] {
   } else if (d.intent === 'UPDATE_PRICE') {
     if (!d.updated_stone_type) missing.push('stone size');
     if (!d.updated_rate) missing.push('new rate');
-  } else if (d.intent === 'GET_KHATA') {
+  } else if (d.intent === 'GET_KHATA' || d.intent === 'GET_BALANCE') {
     if (!d.person_name) missing.push('person name');
   }
   return missing;
