@@ -30,6 +30,15 @@ describe('dashboard auth guard + navigation', () => {
     expect(screen.getAllByRole('link', { name: /overview/i })[0].className).not.toContain('bg-blue-600');
   });
 
+  it('the phone menu button has a name for screen readers and reports its state', async () => {
+    setAuthToken('t');
+    render(<DashboardLayout><p>x</p></DashboardLayout>);
+    const button = screen.getByRole('button', { name: 'Open menu' });
+    expect(button).toHaveAttribute('aria-expanded', 'false');
+    await userEvent.click(button);
+    expect(screen.getByRole('button', { name: 'Close menu' })).toHaveAttribute('aria-expanded', 'true');
+  });
+
   it('sign out clears the token', async () => {
     setAuthToken('t');
     render(<DashboardLayout><p>x</p></DashboardLayout>);
