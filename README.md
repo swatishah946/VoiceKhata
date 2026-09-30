@@ -63,7 +63,7 @@ graph TD
 | Ledger invariants | **7,000+** random operation sequences, 0 failures after the fix | property-based test (fast-check) against real PostgreSQL |
 | Pure-function properties | **18,000** generated inputs (9 properties × 2,000) | `tests/unit/properties.test.ts` |
 | Duplicate protection | **0 duplicates** from 3,000 deliveries (1,000 messages × 3 concurrent retries) | `npm run bench -- 3000 30 3` |
-| Webhook acknowledgement | **p50 ≈ 28 ms · p95 ≈ 50 ms · ~640 req/s**, 0 errors over 2,000 signed requests | `npm run bench -- 2000 20` (median of 3 runs, one laptop-class machine, real Postgres) |
+| Webhook acknowledgement | **p50 ≈ 28 ms · p95 ≈ 50 ms · ~640 req/s**, 0 errors over 2,000 signed requests | `npm run bench -- 2000 20` (median of 3 runs on a cloud dev container, real Postgres) |
 | Security issues fixed | **8** (see below), each with a test that fails if the fix is removed | `tests/unit/security.test.ts`, `tests/integration/http.test.ts` |
 | Bugs caught by the new tests | **4**: an undo race (property test), a stone-size parsing bug, a hidden login error, an unlabelled mobile menu button (E2E) | commit history of the `hardening` branch |
 
