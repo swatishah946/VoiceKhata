@@ -35,7 +35,7 @@ graph TD
     A[Owner on WhatsApp] -->|voice note / text / bill photo| B(Twilio WhatsApp API)
     B -->|signed webhook| C[Express webhook]
     C -->|1. verify X-Twilio-Signature<br/>2. sender must be registered<br/>3. MessageSid idempotency| D[(Redis + BullMQ queue)]
-    C -->|200 OK in ~40 ms| B
+    C -->|200 OK, p95 ≈ 50 ms| B
     D --> E[Worker]
     E -->|audio| F[Groq Whisper large-v3-turbo<br/>speech → text]
     F --> G[Gemini Flash<br/>intent + entities as JSON]
@@ -51,6 +51,46 @@ graph TD
 ```
 
 **Message flow:** webhook → queue → (transcribe) → extract → validate → *pending* entry → owner replies **yes** → balances updated atomically. Nothing touches the ledger without a human confirmation.
+
+---
+
+## 📊 Results (measured)
+
+| What | Result | How it was measured |
+|---|---|---|
+| Automated tests | **293** (237 backend · 40 frontend · 16 browser E2E) | `npm test`, `npm run test:e2e`; all run in GitHub Actions on every push |
+| Code coverage | **~97%** backend lines · **~93%** frontend lines | `npm run test:coverage`; CI fails below the minimum thresholds |
+| Ledger invariants | **7,000+** random operation sequences, 0 failures after the fix | property-based test (fast-check) against real PostgreSQL |
+| Pure-function properties | **18,000** generated inputs (9 properties × 2,000) | `tests/unit/properties.test.ts` |
+| Duplicate protection | **0 duplicates** from 3,000 deliveries (1,000 messages × 3 concurrent retries) | `npm run bench -- 3000 30 3` |
+| Webhook acknowledgement | **p50 ≈ 28 ms · p95 ≈ 50 ms · ~640 req/s**, 0 errors over 2,000 signed requests | `npm run bench -- 2000 20` (median of 3 runs, one laptop-class machine, real Postgres) |
+| Security issues fixed | **8** (see below), each with a test that fails if the fix is removed | `tests/unit/security.test.ts`, `tests/integration/http.test.ts` |
+| Bugs caught by the new tests | **4**: an undo race (property test), a stone-size parsing bug, a hidden login error, an unlabelled mobile menu button (E2E) | commit history of the `hardening` branch |
+
+> AI extraction accuracy isn't reported yet: it should be measured on real, hand-labelled messages (`npm run eval`), not on the synthetic sample set.
+
+---
+
+## 🔧 What was fixed
+
+**Security**
+1. **SSRF / credential leak:** the webhook downloaded any URL it was sent *with Twilio credentials attached*. Now only `api.twilio.com`, and credentials are never forwarded on redirects.
+2. **Unsigned webhook:** anyone could post fake WhatsApp messages. Now every request's Twilio signature is verified.
+3. **No sender check:** any WhatsApp number could create entries, confirm them or read ledgers. Now only registered numbers, each mapped to its own organisation.
+4. **Public ledger PDFs:** customer statements sat at guessable URLs (`Khata_<Name>.pdf`). Now random, 30-minute links.
+5–6. **Public fallback secrets:** a hard-coded JWT secret and a default dashboard password were in the repo. The server now refuses to start without strong secrets.
+7. **Password brute force:** login is now rate-limited, and the password is stored as a bcrypt hash.
+8. **Open CORS:** the API accepted requests from any website; now only the dashboard's origin.
+
+Also guarded in new code: CSV/spreadsheet-formula injection in exports, prompt injection in AI input, cross-organisation access on every endpoint.
+
+**Ledger correctness**
+- Twilio retries created **duplicate entries**: the README claimed idempotency but nothing enforced it.
+- "Yes" confirmed the **newest entry in the whole business**, not the sender's own.
+- Money used **floating-point math**; loading, packing, tax and stone type were **never saved**.
+- AI output went into the bill **unvalidated**, and the price list was never checked.
+- **₹ printed as "¹"** in every PDF; dates were **UTC instead of IST**.
+- `undo` could reverse the wrong entry under concurrent confirmations (found by the property test).
 
 ---
 
@@ -97,7 +137,7 @@ graph TD
 | Layer | Tools | What it covers |
 |---|---|---|
 | Backend unit + integration (237) | Vitest, Supertest, **real PostgreSQL + Redis** | money math, AI-output validation, the ledger, WhatsApp flows, queue retries, webhook/API security |
-| **Property-based** | fast-check | thousands of random sequences of entries / "yes" / "no" / "undo" / retries / simultaneous confirms — balances must always equal the sum of confirmed transactions |
+| **Property-based** | fast-check | 7,000+ random sequences of entries / "yes" / "no" / "undo" / retries / simultaneous confirms. Balances must always equal the sum of confirmed transactions. |
 | Frontend (40) | Vitest, React Testing Library | login, dashboard, confirm/cancel, khata page, downloads, auth guard |
 | End-to-end (16) | Playwright, desktop + mobile | real browser → Next.js → Express → Postgres |
 
@@ -117,7 +157,7 @@ npm test                       # component tests
 npm run test:e2e               # browser tests (starts backend + frontend itself)
 ```
 
-**Load test** (webhook acknowledgement latency): `npm run bench -- 2000 20`
+**Load test** (webhook acknowledgement latency): `npm run bench -- 2000 20`. Add a third argument to replay every message, e.g. `npm run bench -- 3000 30 3`, which must show `duplicatesQueued: 0`.
 **AI accuracy eval** (hand-labelled messages): `npm run eval`
 
 ---
@@ -153,7 +193,7 @@ See [`docs/DEPLOYING-HARDENING.md`](docs/DEPLOYING-HARDENING.md) before deployin
 - **Queue:** Redis (Upstash) + BullMQ
 - **AI:** Groq Whisper large-v3-turbo (speech-to-text), Google Gemini Flash (extraction)
 - **Messaging:** Twilio WhatsApp API
-- **Testing / CI:** Vitest, Supertest, GitHub Actions
+- **Testing / CI:** Vitest, Supertest, fast-check (property-based), React Testing Library, Playwright, GitHub Actions
 
 ---
 *Built with ❤️ for Indian small businesses.*

@@ -6,7 +6,9 @@
  * Runs the real app (real Postgres for sender lookup + idempotency) with an
  * in-memory queue, sending correctly signed requests.
  *
- * Usage: TEST_DATABASE_URL=... npm run bench -- [requests=2000] [concurrency=20]
+ * Usage: TEST_DATABASE_URL=... npm run bench -- [requests=2000] [concurrency=20] [deliveries=1]
+ *   deliveries=3 sends every message 3 times at once (like Twilio retries):
+ *   "queued" must equal requests/3 — any more would be a duplicate ledger entry.
  */
 process.env.NODE_ENV = 'test';
 
@@ -18,6 +20,7 @@ import { migrate } from './migrate';
 async function main() {
   const total = Number(process.argv[2] || 2000);
   const concurrency = Number(process.argv[3] || 20);
+  const deliveries = Math.max(1, Number(process.argv[4] || 1));
   const dbUrl = process.env.TEST_DATABASE_URL || 'postgres://postgres@127.0.0.1:5433/voicekhata_test';
   await migrate(dbUrl, () => undefined);
 
@@ -43,7 +46,8 @@ async function main() {
 
   async function one(i: number) {
     const params: Record<string, string> = {
-      MessageSid: `SMbench${runId}${String(i).padStart(10, '0')}`,
+      // with deliveries=3, requests 0,1,2 share one MessageSid, 3,4,5 the next, …
+      MessageSid: `SMbench${runId}${String(Math.floor(i / deliveries)).padStart(10, '0')}`,
       From: `whatsapp:${phone}`,
       Body: 'Ramesh se 5000 aaya',
       NumMedia: '0',
@@ -74,6 +78,9 @@ async function main() {
       {
         requests: total,
         concurrency,
+        deliveriesPerMessage: deliveries,
+        uniqueMessages: Math.ceil(total / deliveries),
+        duplicatesQueued: queued - Math.ceil(total / deliveries),
         failed,
         queued,
         throughputPerSec: Math.round(total / seconds),
