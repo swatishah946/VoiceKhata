@@ -17,7 +17,8 @@
     "seed:prices": "ts-node --transpile-only scripts/seed-prices.ts",
     "simulate": "ts-node --transpile-only scripts/simulate-webhook.ts",
     "eval": "ts-node --transpile-only eval/run-eval.ts",
-    "bench": "ts-node --transpile-only scripts/bench-webhook.ts"
+    "bench": "ts-node --transpile-only scripts/bench-webhook.ts",
+    "reconcile": "ts-node --transpile-only scripts/reconcile.ts"
   },
   "keywords": [],
   "author": "",
@@ -48,6 +49,7 @@
     "@types/pg": "^8.20.0",
     "@types/supertest": "^7.2.1",
     "@vitest/coverage-v8": "^5.0.2",
+    "fast-check": "^4.10.2",
     "nodemon": "^3.1.14",
     "supertest": "^7.3.0",
     "ts-node": "^10.9.2",
