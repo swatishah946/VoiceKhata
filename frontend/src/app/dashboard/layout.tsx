@@ -1,26 +1,28 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
-import { getAuthToken } from '@/lib/api';
-import { LayoutDashboard, Users, FileText, LogOut, Mic, Menu, X, HardHat } from 'lucide-react';
+import { clearAuthToken, getAuthToken } from '@/lib/api';
+import { LayoutDashboard, Users, LogOut, Mic, Menu, X, HardHat } from 'lucide-react';
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [mounted, setMounted] = useState(false);
+  // Read the token without a setState-in-effect: false on the server, real value in the browser
+  const hasToken = useSyncExternalStore(
+    () => () => undefined,
+    () => Boolean(getAuthToken()),
+    () => false
+  );
 
   useEffect(() => {
-    setMounted(true);
-    if (!getAuthToken()) {
-      router.push('/login');
-    }
+    if (!getAuthToken()) router.push('/login');
   }, [router]);
 
   const handleLogout = () => {
-    localStorage.removeItem('voicekhata_token');
+    clearAuthToken();
     router.push('/login');
   };
 
@@ -30,7 +32,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     { name: 'Workers & Advances', href: '/dashboard/workers', icon: HardHat },
   ];
 
-  if (!mounted) return null; // Avoid hydration mismatch
+  if (!hasToken) return null; // not logged in (redirecting) or still on the server
 
   return (
     <div className="min-h-screen bg-slate-950 flex flex-col md:flex-row font-sans text-slate-200">
@@ -43,7 +45,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </div>
           <span className="font-bold text-white text-lg">VoiceKhata</span>
         </div>
-        <button onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} className="text-slate-400 p-2">
+        <button
+          onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+          className="text-slate-400 p-2"
+          aria-label={isMobileMenuOpen ? 'Close menu' : 'Open menu'}
+          aria-expanded={isMobileMenuOpen}
+        >
           {isMobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
         </button>
       </div>
@@ -62,7 +69,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
         <nav className="flex-1 px-4 py-6 space-y-2">
           {navItems.map((item) => {
-            const isActive = pathname === item.href;
+            // Detail pages (/dashboard/parties/<id>) keep their section highlighted
+            const isActive = pathname === item.href || (item.href !== '/dashboard' && pathname.startsWith(item.href + '/'));
             return (
               <Link 
                 key={item.name} 

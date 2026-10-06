@@ -1,23 +1,39 @@
-import { Request, Response, NextFunction } from 'express';
+import { NextFunction, Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
+import { config } from '../config';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'super_secret_voicekhata_key_for_dev';
+export interface AuthUser {
+  orgId: string;
+  role: string;
+}
 
-export const authMiddleware = (req: Request, res: Response, next: NextFunction) => {
-  const authHeader = req.headers.authorization;
+declare module 'express-serve-static-core' {
+  interface Request {
+    user?: AuthUser;
+  }
+}
 
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+/**
+ * Dashboard API authentication (Bearer JWT).
+ * Changes: the secret comes from validated config (no hard-coded fallback), the
+ * algorithm is pinned to HS256, and the payload shape is checked.
+ */
+export function authMiddleware(req: Request, res: Response, next: NextFunction) {
+  const header = req.headers.authorization;
+  if (!header?.startsWith('Bearer ')) {
     return res.status(401).json({ error: 'Unauthorized: Missing or invalid token' });
   }
 
-  const token = authHeader.split(' ')[1];
-
   try {
-    const decoded = jwt.verify(token, JWT_SECRET);
-    // Attach the decoded payload to the request (e.g. orgId)
-    (req as any).user = decoded;
+    const decoded = jwt.verify(header.slice(7), config.JWT_SECRET, { algorithms: ['HS256'] }) as any;
+    if (typeof decoded?.orgId !== 'string') throw new Error('bad payload');
+    req.user = { orgId: decoded.orgId, role: decoded.role };
     next();
-  } catch (err) {
+  } catch {
     return res.status(401).json({ error: 'Unauthorized: Invalid token' });
   }
-};
+}
+
+export function signToken(user: AuthUser): string {
+  return jwt.sign(user, config.JWT_SECRET, { algorithm: 'HS256', expiresIn: config.JWT_EXPIRES_IN as any });
+}

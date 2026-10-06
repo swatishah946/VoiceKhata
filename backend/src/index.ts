@@ -1,40 +1,34 @@
-import express, { Request, Response } from 'express';
-import dotenv from 'dotenv';
-import cors from 'cors';
-import helmet from 'helmet';
-import morgan from 'morgan';
-import whatsappRoutes from './routes/whatsapp.routes';
-import apiRoutes from './routes/api.routes';
+import { config } from './config';
+import { createApp } from './app';
+import pool from './db';
+import { createMessageQueue } from './queue';
+import { fileStore } from './services/file-store';
 
-// Load environment variables
-dotenv.config();
-
-const app = express();
-const port = process.env.PORT || 3000;
-
-// Middleware
-app.use(helmet());
-app.use(cors());
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-app.use(morgan('dev'));
-
-// Basic health check route
-app.get('/health', (req: Request, res: Response) => {
-  res.json({ status: 'OK', timestamp: new Date() });
+/**
+ * Entry point: HTTP server + queue worker in one process (fits Render's free tier).
+ * config is imported first, so a missing secret stops startup with a clear error.
+ */
+const messages = createMessageQueue();
+const app = createApp({ enqueue: messages.enqueue });
+const server = app.listen(config.PORT, () => {
+  console.log(`🚀 VoiceKhata backend listening on port ${config.PORT}`);
 });
+const worker = messages.startWorker();
+const cleanupTimer = setInterval(() => fileStore.cleanup(), 10 * 60 * 1000);
 
-// Register Webhook Routes (Meta API)
-app.use('/webhook/whatsapp', whatsappRoutes);
-
-// Register Dashboard REST APIs
-app.use('/api', apiRoutes);
-
-// Serve static PDFs for Twilio to download
-import path from 'path';
-app.use('/pdfs', express.static(path.join(process.cwd(), 'public', 'pdfs')));
-
-// Start the server
-app.listen(port, () => {
-  console.log(`🚀 VoiceKhata Backend Server is running on port ${port}`);
-});
+// Graceful shutdown: Render sends SIGTERM on every deploy. Finish the current
+// job and close connections instead of being killed mid-transaction.
+let shuttingDown = false;
+async function shutdown(signal: string) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`${signal} received, shutting down…`);
+  clearInterval(cleanupTimer);
+  server.close();
+  await worker.close().catch(() => undefined);
+  await messages.close().catch(() => undefined);
+  await pool.end().catch(() => undefined);
+  process.exit(0);
+}
+process.on('SIGTERM', () => void shutdown('SIGTERM'));
+process.on('SIGINT', () => void shutdown('SIGINT'));

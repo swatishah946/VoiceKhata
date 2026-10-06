@@ -1,11 +1,20 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { fetchApi } from '@/lib/api';
-import { HardHat, Search, TrendingDown, Users } from 'lucide-react';
+import { formatCurrency } from '@/lib/format';
+import { HardHat, Search, TrendingDown } from 'lucide-react';
+
+interface Worker {
+  id: string;
+  name: string;
+  advances_taken: string | number | null;
+  net_due: string | number | null;
+}
 
 export default function WorkersPage() {
-  const [workers, setWorkers] = useState<any[]>([]);
+  const [workers, setWorkers] = useState<Worker[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
 
@@ -24,10 +33,6 @@ export default function WorkersPage() {
     }
     loadWorkers();
   }, []);
-
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(amount || 0);
-  };
 
   const filteredWorkers = workers.filter(w => 
     w.name?.toLowerCase().includes(searchTerm.toLowerCase())
@@ -73,7 +78,7 @@ export default function WorkersPage() {
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {filteredWorkers.map((worker) => (
-            <div key={worker.id} className="bg-slate-900 border border-slate-800 rounded-2xl p-5 hover:border-slate-700 transition-all group">
+            <Link key={worker.id} href={`/dashboard/workers/${worker.id}`} className="block bg-slate-900 border border-slate-800 rounded-2xl p-5 hover:border-slate-700 transition-all group">
               <div className="flex items-start justify-between">
                 <div className="flex items-center gap-3">
                   <div className="p-2 rounded-lg bg-purple-500/10 text-purple-400">
@@ -102,7 +107,7 @@ export default function WorkersPage() {
                   </div>
                 </div>
               </div>
-            </div>
+            </Link>
           ))}
         </div>
       )}
