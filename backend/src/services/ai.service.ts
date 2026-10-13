@@ -55,7 +55,7 @@ const PROMPT_INSTRUCTIONS = `
 `;
 
 export async function extractTransactionDetails(transcribedText: string) {
-  const primaryUrl = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent';
+  const primaryUrl = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent';
   const fallbackUrl = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent';
   const apiKey = process.env.GEMINI_API_KEY || '';
 
@@ -97,7 +97,7 @@ export async function extractTransactionDetails(transcribedText: string) {
 
   try {
     console.log(`🤖 Calling Gemini 3.5 Flash...`);
-    return await tryExtract(primaryUrl, 'gemini-3.5-flash');
+    return await tryExtract(primaryUrl, 'gemini-3.8-flash');
   } catch (error: any) {
     const status = error.status || (error.message && error.message.match(/\[(\d+)\]/)?.[1]);
     
@@ -120,7 +120,7 @@ export async function extractTransactionDetails(transcribedText: string) {
 }
 
 export async function extractTransactionDetailsFromImage(base64Image: string, mimeType: string) {
-  const primaryUrl = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent';
+  const primaryUrl = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent';
   const fallbackUrl = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent';
   const apiKey = process.env.GEMINI_API_KEY || '';
 
@@ -168,7 +168,7 @@ export async function extractTransactionDetailsFromImage(base64Image: string, mi
 
   try {
     console.log(`📸 Calling Gemini Vision 3.5 Flash...`);
-    return await tryExtract(primaryUrl, 'gemini-3.5-flash');
+    return await tryExtract(primaryUrl, 'gemini-3.8-flash');
   } catch (error: any) {
     const status = error.status || (error.message && error.message.match(/\[(\d+)\]/)?.[1]);
     
