@@ -55,8 +55,8 @@ const PROMPT_INSTRUCTIONS = `
 `;
 
 export async function extractTransactionDetails(transcribedText: string) {
-  const primaryUrl = 'https://generativelanguage.googleapis.com/v1beta/models/ gemini-3.5-flash-lite:generateContent';
-  const fallbackUrl = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent';
+  const primaryUrl = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent';
+  const fallbackUrl = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent';
   const apiKey = process.env.GEMINI_API_KEY || '';
 
   const headers: any = {
@@ -96,8 +96,8 @@ export async function extractTransactionDetails(transcribedText: string) {
   }
 
   try {
-    console.log(`🤖 Calling  gemini-3.5-flash-lite...`);
-    return await tryExtract(primaryUrl, 'gemini-3.8-flash');
+    console.log(`🤖 Calling gemini-3.5-flash-lite...`);
+    return await tryExtract(primaryUrl, 'gemini-3.5-flash-lite');
   } catch (error: any) {
     const status = error.status || (error.message && error.message.match(/\[(\d+)\]/)?.[1]);
     
@@ -106,9 +106,9 @@ export async function extractTransactionDetails(transcribedText: string) {
       throw error; // Throw to trigger BullMQ retry
     }
 
-    console.log(`🔄 Gemini 3.5 Flash had error, trying Gemini 1.5 Flash...`);
+    console.log(`🔄 gemini-3.5-flash-lite had error, trying gemini-3.6-flash...`);
     try {
-      return await tryExtract(fallbackUrl, 'gemini-1.5-flash-latest');
+      return await tryExtract(fallbackUrl, 'gemini-3.6-flash');
     } catch (fallbackError: any) {
       const fallbackStatus = fallbackError.status || (fallbackError.message && fallbackError.message.match(/\[(\d+)\]/)?.[1]);
       if (fallbackStatus == 503 || fallbackStatus == 429) {
@@ -120,8 +120,8 @@ export async function extractTransactionDetails(transcribedText: string) {
 }
 
 export async function extractTransactionDetailsFromImage(base64Image: string, mimeType: string) {
-  const primaryUrl = 'https://generativelanguage.googleapis.com/v1beta/models/ gemini-3.5-flash-lite:generateContent';
-  const fallbackUrl = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent';
+  const primaryUrl = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent';
+  const fallbackUrl = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent';
   const apiKey = process.env.GEMINI_API_KEY || '';
 
   const headers: any = { 
@@ -167,8 +167,8 @@ export async function extractTransactionDetailsFromImage(base64Image: string, mi
   }
 
   try {
-    console.log(`📸 Calling  gemini-3.5-flash-lite..`);
-    return await tryExtract(primaryUrl, ' gemini-3.5-flash-lite');
+    console.log(`📸 Calling gemini-3.5-flash-lite..`);
+    return await tryExtract(primaryUrl, 'gemini-3.5-flash-lite');
   } catch (error: any) {
     const status = error.status || (error.message && error.message.match(/\[(\d+)\]/)?.[1]);
     
@@ -177,9 +177,9 @@ export async function extractTransactionDetailsFromImage(base64Image: string, mi
       throw error; // Throw to trigger BullMQ retry
     }
 
-    console.log(`🔄 Gemini Vision 3.5 Flash had error, trying Gemini 1.5 Flash...`);
+    console.log(`🔄 Gemini Vision lite had error, trying gemini-3.6-flash...`);
     try {
-      return await tryExtract(fallbackUrl, 'gemini-1.5-flash-latest');
+      return await tryExtract(fallbackUrl, 'gemini-3.6-flash');
     } catch (fallbackError: any) {
       const fallbackStatus = fallbackError.status || (fallbackError.message && fallbackError.message.match(/\[(\d+)\]/)?.[1]);
       if (fallbackStatus == 503 || fallbackStatus == 429) {
